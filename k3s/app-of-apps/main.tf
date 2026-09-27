@@ -6,10 +6,6 @@ terraform {
       source  = "alekc/kubectl"
       version = "~> 2.1"
     }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2"
-    }
   }
 
   # Native GCS backend (not the s3 backend type against GCS's S3-interop endpoint - app-factory's
