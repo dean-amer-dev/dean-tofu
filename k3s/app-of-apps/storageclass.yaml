@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: openebs-lvm-localpv
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: local.csi.openebs.io
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+parameters:
+  storage: "lvm"
+  # Live-checked 2026-09-30: actual VG names are gmktec-1-vg, gmktek-2-vg (typo, kept from before
+  # the hostname fix), gmktec-3-vg - not a single literal name across nodes.
+  vgpattern: "^(gmktec|gmktek)-[0-9]-vg$"
