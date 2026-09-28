@@ -4,12 +4,15 @@
 # external-dns-technitium are deliberately not here yet (no chart, needs its own StatefulSet
 # design + a decision on where hand-written manifests live).
 resource "kubectl_manifest" "app_of_apps" {
-  # templatefile (not file): stamps a fresh argocd.argoproj.io/refresh annotation on every apply
-  # (see applicationset.yaml.tftpl) so ArgoCD re-evaluates immediately instead of waiting out its
-  # own retry backoff or reconcile-poll interval.
-  yaml_body = templatefile("${path.module}/applicationset.yaml.tftpl", {
-    refresh_token = timestamp()
-  })
+  # Plain file, not templatefile(): a prior version of this stamped a fresh
+  # argocd.argoproj.io/refresh annotation on every apply via timestamp(), to force ArgoCD to
+  # re-evaluate immediately instead of waiting out its retry backoff. Removed - it caused a live
+  # reconcile storm: the ApplicationSet controller continuously re-asserts its template against
+  # the generated Application, and the app-controller clears the refresh annotation the instant it
+  # processes it, so the two fought in a tight loop (Alex saw the ArgoCD UI refreshing ~5x/second
+  # on every app in the tier). A slower sync after a genuinely-failing apply, occasionally needing
+  # a manual `argocd app sync`, is a much smaller cost than a permanent reconcile storm.
+  yaml_body = file("${path.module}/applicationset.yaml")
 }
 
 # selfsigned-issuer needs cert-manager's CRDs to exist. No wait mechanism here (no local-exec, per

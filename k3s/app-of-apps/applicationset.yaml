@@ -148,14 +148,6 @@ spec:
       name: "{{name}}"
       annotations:
         argocd.argoproj.io/sync-wave: "{{syncWave}}"
-        # Forces ArgoCD to re-evaluate immediately on every `tofu apply`, bypassing its own
-        # retry backoff for a previously-failing sync (hit this live: ESO's sync had failed
-        # repeatedly before a fix landed, and ArgoCD's backoff meant it needed a manual
-        # `argocd app sync` rather than picking the fix up right away). refresh_token is
-        # Tofu's timestamp() at apply time - a fresh value every apply, so the annotation is
-        # always "new" from ArgoCD's perspective even though it clears the annotation itself
-        # after processing.
-        argocd.argoproj.io/refresh: "${refresh_token}"
     spec:
       project: default
       source:
