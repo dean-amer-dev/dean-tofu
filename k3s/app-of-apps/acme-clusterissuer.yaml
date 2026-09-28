@@ -15,4 +15,4 @@ spec:
           digitalocean:
             tokenSecretRef:
               name: do-dns-api-key
-              key: api-key
+              key: digitalocean_api_token

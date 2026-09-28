@@ -90,23 +90,38 @@ spec:
 
           - name: external-dns-do
             namespace: app-of-apps
-            # NOT an OCI registry - registry.k8s.io/external-dns/charts/external-dns has zero
-            # published tags (verified live: empty tags list via the registry's own API), a
-            # research error that sat unnoticed since the first apply. The real, current,
-            # official source is a classic Helm HTTP repo (confirmed via the chart's own README).
-            repoURL: https://kubernetes-sigs.github.io/external-dns/
+            # Upstream kubernetes-sigs chart dropped DigitalOcean entirely (moved out-of-tree, no
+            # in-tree replacement - confirmed live: real apply error listing valid providers,
+            # digitalocean not among them). k3s-dean-gitops's values.yaml (provider.name:
+            # digitalocean + a flat env: DO_TOKEN override) is the Bitnami chart's shape, which
+            # still supports it natively - matches Alex's instruction to use what the legacy
+            # cluster runs. Bitnami's free-tier OCI registry is frozen (no updates since
+            # 2025-08-13, per Docker Hub) but still pullable - 9.0.3 is the newest available and
+            # the version this uses.
+            #
+            # Field names below differ from k3s-dean-gitops's values.yaml because that file's
+            # exact chart/version was never recorded in git (no committed Application manifest,
+            # dean-helm-app is empty, legacy cluster is unreachable to check live) - adapted to
+            # 9.0.3's actual schema instead, verified directly (`helm pull` + read the real
+            # values.yaml), not guessed: provider is a plain string here, not {name: ...}, and the
+            # token goes through the chart's own dedicated digitalocean.secretName field (expects
+            # key digitalocean_api_token) rather than a raw env: override.
+            repoURL: oci://registry-1.docker.io/bitnamicharts
             chart: external-dns
-            targetRevision: 1.22.0
+            targetRevision: 9.0.3
             syncWave: "4"
             valuesYaml: |
-              provider:
-                name: digitalocean
-              env:
-                - name: DO_TOKEN
-                  valueFrom:
-                    secretKeyRef:
-                      name: do-dns-api-key
-                      key: api-key
+              replicaCount: 1
+              resources:
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              provider: digitalocean
+              digitalocean:
+                secretName: do-dns-api-key
               domainFilters:
                 - amer.dev
               sources:
@@ -115,11 +130,11 @@ spec:
                 - crd
               policy: sync
               interval: 5m
-              minEventSyncInterval: 5m
+              extraArgs:
+                min-event-sync-interval: "5m"
               txtOwnerId: "external-dns-do"
               txtPrefix: "do-"
               logLevel: info
-              logFormat: text
 
           - name: openebs
             namespace: openebs
