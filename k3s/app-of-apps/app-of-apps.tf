@@ -40,7 +40,26 @@ resource "kubectl_manifest" "bitwarden_sdk_server_tls" {
   yaml_body  = file("${path.module}/bitwarden-sdk-server-tls.yaml")
 }
 
-# --- Not yet wired: ESO's ClusterSecretStore, the do-dns-api-key ExternalSecret, and the ACME
-# ClusterIssuer. ClusterSecretStore needs the bitwarden-sdk-server's CA cert (issued by the
-# Certificate above) - read live via a kubectl_manifest data source once that cert actually
-# exists, in a follow-up apply, rather than assuming its value now. ---
+# Created eagerly (needs ESO's ClusterSecretStore CRD, from the app_of_apps ApplicationSet).
+# Uses caProvider (reads the CA from bitwarden-tls-certs at runtime), not a Tofu-side read of a
+# value that might not exist yet - so this never has to wait for bitwarden_sdk_server_tls to
+# actually finish issuing. Sits not-Ready until that Secret exists, then self-heals - accepted
+# per Alex, simpler than chaining a wait for it.
+resource "kubectl_manifest" "cluster_secret_store" {
+  depends_on = [kubectl_manifest.app_of_apps]
+  yaml_body  = file("${path.module}/clustersecretstore.yaml")
+}
+
+# Sits Pending until cluster_secret_store is actually Ready, then self-heals - same pattern.
+resource "kubectl_manifest" "do_dns_external_secret" {
+  depends_on = [kubectl_manifest.cluster_secret_store]
+  yaml_body  = file("${path.module}/do-dns-externalsecret.yaml")
+}
+
+# Doesn't need do_dns_external_secret's Secret to exist at create time (only when cert-manager
+# actually tries to issue a cert against it) - just needs cert-manager's CRD, guaranteed by
+# selfsigned_issuer's successful creation.
+resource "kubectl_manifest" "acme_staging_issuer" {
+  depends_on = [kubectl_manifest.selfsigned_issuer]
+  yaml_body  = file("${path.module}/acme-clusterissuer.yaml")
+}

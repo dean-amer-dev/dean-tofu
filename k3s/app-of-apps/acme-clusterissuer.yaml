@@ -1,0 +1,18 @@
+# letsencrypt-STAGING deliberately, per Alex - stays here until he manually confirms certs work,
+# then cuts over to prod as a separate, deliberate step (never automatic).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: alex@amer.dev
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+      - dns01:
+          digitalocean:
+            tokenSecretRef:
+              name: do-dns-api-key
+              key: api-key
