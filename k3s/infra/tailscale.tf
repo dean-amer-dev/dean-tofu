@@ -16,6 +16,14 @@ data "kubectl_path_documents" "tailscale" {
 resource "kubectl_manifest" "tailscale" {
   for_each  = data.kubectl_path_documents.tailscale.manifests
   yaml_body = each.value
+  # The Deployment among these 6 documents references tailscale-auth-key, which the
+  # ExternalSecret below creates - but that's necessarily sequenced *after* this resource
+  # (it needs the ServiceAccount/RBAC docs in the same for_each to exist first). Left at the
+  # default (true), kubectl_manifest blocks up to 10 minutes waiting for the Deployment to roll
+  # out, which can never happen until the secret exists - a self-inflicted deadlock. Same
+  # eager-create-and-self-heal pattern as everywhere else instead: don't wait, let it sit
+  # CreateContainerConfigError until the secret lands moments later.
+  wait_for_rollout = false
 }
 
 resource "kubectl_manifest" "tailscale_auth_key" {
