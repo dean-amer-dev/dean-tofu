@@ -90,38 +90,34 @@ spec:
 
           - name: external-dns-do
             namespace: app-of-apps
-            # Upstream kubernetes-sigs chart dropped DigitalOcean entirely (moved out-of-tree, no
-            # in-tree replacement - confirmed live: real apply error listing valid providers,
-            # digitalocean not among them). k3s-dean-gitops's values.yaml (provider.name:
-            # digitalocean + a flat env: DO_TOKEN override) is the Bitnami chart's shape, which
-            # still supports it natively - matches Alex's instruction to use what the legacy
-            # cluster runs. Bitnami's free-tier OCI registry is frozen (no updates since
-            # 2025-08-13, per Docker Hub) but still pullable - 9.0.3 is the newest available and
-            # the version this uses.
+            # Bitnami's chart was tried next (still lists digitalocean as a supported provider)
+            # but its free-tier OCI registry now returns 401 Unauthorized even for pulls that
+            # succeed interactively via `helm pull` - confirmed live, ArgoCD's repo-server can't
+            # auth to it. Reverted rather than add a Docker Hub credential dependency just for a
+            # chart frozen since 2025-08-13.
             #
-            # Field names below differ from k3s-dean-gitops's values.yaml because that file's
-            # exact chart/version was never recorded in git (no committed Application manifest,
-            # dean-helm-app is empty, legacy cluster is unreachable to check live) - adapted to
-            # 9.0.3's actual schema instead, verified directly (`helm pull` + read the real
-            # values.yaml), not guessed: provider is a plain string here, not {name: ...}, and the
-            # token goes through the chart's own dedicated digitalocean.secretName field (expects
-            # key digitalocean_api_token) rather than a raw env: override.
-            repoURL: oci://registry-1.docker.io/bitnamicharts
+            # Real fix: kubernetes-sigs removed DigitalOcean in PR #6283 (merged 2026-03-17,
+            # "chore(digitalocean)!: remove in-tree provider") - chart 1.20.0 (app v0.20.0,
+            # released 2026-01-02) is the last release published *before* that merge. Confirmed
+            # directly (not inferred from dates alone): provider/digitalocean/digital_ocean.go
+            # exists in the source tree at tag v0.20.0, and it reads the token from the DO_TOKEN
+            # env var - exactly matching k3s-dean-gitops's values.yaml shape (provider.name:
+            # digitalocean + a flat env: override), which is why that shape looked right from the
+            # start - it just needs a chart old enough to still have the provider. Same repo used
+            # for every other component here, no OCI/auth involved.
+            repoURL: https://kubernetes-sigs.github.io/external-dns/
             chart: external-dns
-            targetRevision: 9.0.3
+            targetRevision: "1.20.0"
             syncWave: "4"
             valuesYaml: |
-              replicaCount: 1
-              resources:
-                limits:
-                  cpu: 100m
-                  memory: 128Mi
-                requests:
-                  cpu: 50m
-                  memory: 64Mi
-              provider: digitalocean
-              digitalocean:
-                secretName: do-dns-api-key
+              provider:
+                name: digitalocean
+              env:
+                - name: DO_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: do-dns-api-key
+                      key: digitalocean_api_token
               domainFilters:
                 - amer.dev
               sources:
@@ -130,8 +126,6 @@ spec:
                 - crd
               policy: sync
               interval: 5m
-              extraArgs:
-                min-event-sync-interval: "5m"
               txtOwnerId: "external-dns-do"
               txtPrefix: "do-"
               logLevel: info
