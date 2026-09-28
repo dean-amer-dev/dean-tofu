@@ -10,12 +10,16 @@ resource "kubectl_manifest" "application" {
   yaml_body = file("${path.module}/application.yaml")
 }
 
-resource "kubectl_manifest" "oauth" {
-  depends_on = [kubectl_manifest.application]
-  yaml_body  = file("${path.module}/oauth-externalsecret.yaml")
+removed {
+  from = kubectl_manifest.oauth
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "kubectl_manifest" "connector" {
-  depends_on = [kubectl_manifest.application]
-  yaml_body  = file("${path.module}/connector.yaml")
+removed {
+  from = kubectl_manifest.connector
+  lifecycle {
+    destroy = false
+  }
 }

@@ -5,18 +5,66 @@ metadata:
   namespace: argocd
 spec:
   project: default
-  source:
-    repoURL: https://pkgs.tailscale.com/helmcharts
-    chart: tailscale-operator
-    targetRevision: 1.102.4
-    helm:
-      values: |
-        installCRDs: true
-        # oauth.clientId/clientSecret deliberately left unset - the chart falls back to a
-        # pre-existing Secret named operator-oauth (keys client_id/client_secret), created by
-        # oauth-externalsecret.yaml in this same folder. Defaults for operatorConfig/proxyConfig
-        # tags (tag:k8s-operator, tag:k8s) are used as-is - set up via the OAuth client creation
-        # wizard in the Tailscale admin console, which configures matching ACL tagOwners too.
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.4
+      helm:
+        values: |
+          installCRDs: true
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+            - apiVersion: external-secrets.io/v1
+              kind: ExternalSecret
+              metadata:
+                name: operator-oauth
+                namespace: infra
+              spec:
+                refreshInterval: 1h
+                secretStoreRef:
+                  name: bitwarden-secretsmanager
+                  kind: ClusterSecretStore
+                target:
+                  name: operator-oauth
+                  creationPolicy: Owner
+                  deletionPolicy: Retain
+                  template:
+                    type: Opaque
+                    engineVersion: v2
+                    mergePolicy: Replace
+                    metadata: {}
+                    data:
+                      client_id: "{{ .client_id }}"
+                      client_secret: "{{ .client_secret }}"
+                data:
+                  - secretKey: client_id
+                    remoteRef:
+                      key: 6706508d-3088-464e-ac03-b4d300ba97d3
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: client_secret
+                    remoteRef:
+                      key: 385c7875-6af2-4096-9cea-b4d300babfcd
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+            - apiVersion: tailscale.com/v1alpha1
+              kind: Connector
+              metadata:
+                name: gmktec-subnet-router
+                annotations:
+                  argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+              spec:
+                replicas: 2
+                subnetRouter:
+                  advertiseRoutes:
+                    - 10.100.20.0/24
+                exitNode: true
   destination:
     server: https://kubernetes.default.svc
     namespace: infra
