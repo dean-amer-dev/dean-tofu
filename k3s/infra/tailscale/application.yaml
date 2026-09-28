@@ -5,18 +5,21 @@ metadata:
   namespace: argocd
 spec:
   project: default
-  source:
-    repoURL: https://pkgs.tailscale.com/helmcharts
-    chart: tailscale-operator
-    targetRevision: 1.102.4
-    helm:
-      values: |
-        installCRDs: true
-        # oauth.clientId/clientSecret deliberately left unset - the chart falls back to a
-        # pre-existing Secret named operator-oauth (keys client_id/client_secret), created by
-        # oauth-externalsecret.yaml in this same folder. Defaults for operatorConfig/proxyConfig
-        # tags (tag:k8s-operator, tag:k8s) are used as-is - set up via the OAuth client creation
-        # wizard in the Tailscale admin console, which configures matching ACL tagOwners too.
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.4
+      helm:
+        values: |
+          installCRDs: true
+          # oauth.clientId/clientSecret deliberately left unset - the chart falls back to a
+          # pre-existing Secret named operator-oauth (keys client_id/client_secret), created by
+          # manifests/oauth-externalsecret.yaml (second source of this Application). Defaults for operatorConfig/proxyConfig
+          # tags (tag:k8s-operator, tag:k8s) are used as-is - set up via the OAuth client creation
+          # wizard in the Tailscale admin console, which configures matching ACL tagOwners too.
+    - repoURL: https://github.com/dean-amer-dev/dean-tofu
+      targetRevision: main
+      path: k3s/infra/tailscale/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: infra
