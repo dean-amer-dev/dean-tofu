@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://pkgs.tailscale.com/helmcharts
+    chart: tailscale-operator
+    targetRevision: 1.102.4
+    helm:
+      values: |
+        installCRDs: true
+        # oauth.clientId/clientSecret deliberately left unset - the chart falls back to a
+        # pre-existing Secret named operator-oauth (keys client_id/client_secret), created by
+        # oauth-externalsecret.yaml in this same folder. Defaults for operatorConfig/proxyConfig
+        # tags (tag:k8s-operator, tag:k8s) are used as-is - set up via the OAuth client creation
+        # wizard in the Tailscale admin console, which configures matching ACL tagOwners too.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: infra
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -24,3 +24,10 @@ variable "kubeconfig_path" {
   type        = string
   default     = "~/.kube/gmktec.yaml"
 }
+
+# Each infra-tier app is its own child module, in its own folder - not one shared ApplicationSet
+# spanning multiple apps (per Alex, 2026-09-28). One `tofu apply` at this root still creates/
+# updates every infra app at once; they're just organized and reviewed independently.
+module "tailscale" {
+  source = "./tailscale"
+}
