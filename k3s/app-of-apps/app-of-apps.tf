@@ -32,7 +32,15 @@ resource "kubectl_manifest" "openebs_storageclass" {
   yaml_body  = file("${path.module}/storageclass.yaml")
 }
 
+# The bitwarden-sdk-server subchart does NOT create this itself (verified via `helm show values`
+# against the real chart in use - no tls.certManager field exists there, only image.tls.enabled
+# expecting a pre-existing Secret). See bitwarden-sdk-server-tls.yaml for the full reasoning.
+resource "kubectl_manifest" "bitwarden_sdk_server_tls" {
+  depends_on = [kubectl_manifest.selfsigned_issuer]
+  yaml_body  = file("${path.module}/bitwarden-sdk-server-tls.yaml")
+}
+
 # --- Not yet wired: ESO's ClusterSecretStore, the do-dns-api-key ExternalSecret, and the ACME
-# ClusterIssuer. ClusterSecretStore needs the bitwarden-sdk-server's CA cert (issued by
-# selfsigned-issuer, via ESO's own chart) - read live via a kubectl_manifest data source once that
-# cert actually exists, in a follow-up apply, rather than assuming its value now. ---
+# ClusterIssuer. ClusterSecretStore needs the bitwarden-sdk-server's CA cert (issued by the
+# Certificate above) - read live via a kubectl_manifest data source once that cert actually
+# exists, in a follow-up apply, rather than assuming its value now. ---

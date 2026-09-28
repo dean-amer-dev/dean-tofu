@@ -59,33 +59,18 @@ spec:
               installCRDs: true
               deploymentAnnotations:
                 reloader.stakater.com/search: "true"
-              webhook:
-                enabled: true
-                port: 9443
-                tls:
-                  enabled: true
-                  certManager:
-                    enabled: true
-                    issuerRef:
-                      name: selfsigned-issuer
-                      kind: ClusterIssuer
-                    certificate:
-                      name: external-secrets-webhook-cert
-                      namespace: app-of-apps
+              # No webhook.tls/certManager block: verified via `helm show values` against the
+              # real v0.20.2 chart that no such field exists - the webhook manages its own TLS
+              # cert internally (eso-external-secrets-cert-controller), already working with
+              # chart defaults. Legacy's values.yaml assumed an older chart schema.
               bitwarden-sdk-server:
                 enabled: true
                 podAnnotations:
                   secret.reloader.stakater.com/reload: "bitwarden-tls-certs"
-                tls:
-                  enabled: true
-                  certManager:
-                    enabled: true
-                    issuerRef:
-                      name: selfsigned-issuer
-                      kind: ClusterIssuer
-                    certificate:
-                      name: bitwarden-sdk-server-tls
-                      namespace: app-of-apps
+                # image.tls.enabled defaults to true already (see values schema) - the subchart
+                # expects a pre-existing bitwarden-tls-certs Secret, it does not create one via
+                # any certManager values field (also verified - no such field exists here
+                # either). See bitwarden-sdk-server-tls.yaml, applied directly by Tofu.
                 resources:
                   requests:
                     cpu: 50m

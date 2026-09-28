@@ -1,0 +1,32 @@
+# The bitwarden-sdk-server subchart (external-secrets' ESO chart) does NOT create this itself -
+# confirmed via `helm show values oci://ghcr.io/external-secrets/charts/bitwarden-sdk-server` for
+# the actual version in use: there is no tls.certManager field anywhere in its schema, only
+# image.tls.enabled (default true) expecting a pre-existing Secret named bitwarden-tls-certs. The
+# legacy cluster's setup creates this exact same Certificate as its own standalone manifest for the
+# same reason - not via chart values either.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bitwarden-sdk-server-tls
+  namespace: app-of-apps
+spec:
+  secretName: bitwarden-tls-certs
+  secretTemplate:
+    annotations:
+      reloader.stakater.com/match: "true"
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - bitwarden-sdk-server.app-of-apps.svc.cluster.local
+    - bitwarden-sdk-server.app-of-apps.svc
+    - bitwarden-sdk-server
+  commonName: bitwarden-sdk-server.app-of-apps.svc.cluster.local
+  # isCA: true makes cert-manager include ca.crt in the generated secret - the sdk-server image's
+  # tls volume mount remaps ca.crt -> ca.pem (see values.yaml), so it needs to actually be present.
+  isCA: true
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
