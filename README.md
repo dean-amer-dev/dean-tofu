@@ -49,17 +49,42 @@ generator templates use Go-template `{{...}}` syntax inside fields schema valida
 expect, which trips that check. `kubectl_manifest` (`alekc/kubectl`) applies via server-side apply
 as a YAML blob instead, with no schema round-trip - simpler and more robust for this specific case.
 
-## Sequencing within `k3s/app-of-apps/`
+## Sequencing within `k3s/app-of-apps/`: eager creation, accept transient crash-loops
 
-Several components have a real dependency on an earlier one's CRDs or certificates existing (ESO's
-sidecar TLS cert needs cert-manager's `selfsigned-issuer`, which needs cert-manager's CRDs
-installed and synced first). `argocd.argoproj.io/sync-wave` annotations only order resources
-*within* one Application's own sync - they do **not** make ArgoCD wait for one
-ApplicationSet-generated Application to be Healthy before starting the next one's sync. Real
-cross-component ordering inside one `tofu apply` is handled with `null_resource` +
-`local-exec` wait gates (poll for the resource to exist, then wait for its real condition) chained
-via `depends_on` - see `app-of-apps.tf`. Where a dependency crosses an `ApplicationSet`-generated
-Application's *own* health (not just a raw manifest Tofu also owns directly), the design instead
-leans on `syncPolicy.automated.selfHeal: true` to converge shortly after the dependency appears,
-same pattern already used for ArgoCD's own Ingress in Phase 0 (created before cert-manager/external-dns
-existed, picked up automatically once they did).
+Several resources have a real dependency on an earlier one existing (ESO's `ClusterSecretStore`
+needs `bitwarden-sdk-server`'s TLS cert; `external-dns-do` needs the `do-dns-api-key` Secret; a
+couple of small manifests need a CRD from an earlier chart to be registered). Two approaches were
+tried and rejected before landing on the current one:
+
+- **`argocd.argoproj.io/sync-wave` annotations do not order separate `ApplicationSet`-generated
+  Applications relative to each other** - confirmed against ArgoCD's own docs/community: sync-waves
+  only order resources *within* one Application's own sync. `ApplicationSet` is a generator, not an
+  Application, so there's nothing for a wave to attach to across generated Applications.
+- **`null_resource` + `local-exec` wait gates were built, then removed entirely** (Alex: no
+  local-exec, under any circumstances - it's an imperative shell escape hatch inside otherwise-
+  declarative IaC, and it introduced a real bug live: `KUBECONFIG="~/.kube/foo.yaml"` doesn't
+  tilde-expand inside double quotes in bash).
+- **Individual `kubectl_manifest` Application resources with the provider's native `wait_for`**
+  (poll a live status condition, no shell) were designed and validated but never committed -
+  rejected in favor of the simpler option below once it became clear the CA-bundle problem (the
+  one piece that genuinely couldn't just "settle") had a real fix.
+
+**What's actually used:** every resource in this tier is created eagerly, in one `tofu apply`, no
+waiting. A resource with an unmet dependency just sits not-Ready/Degraded/CrashLoopBackOff until
+that dependency appears, then self-heals on its own (`syncPolicy.automated.selfHeal: true` for
+ArgoCD-managed Applications; ESO/cert-manager's own controllers reconcile their CRs on a timer
+regardless). This works because the CRs are cheap to leave failing and every dependency here does
+eventually resolve within the same apply's lifetime - `external-dns-do` has run this way
+successfully since day one. Where a value would otherwise need to be read at apply time before it
+exists (e.g. a CA certificate cert-manager hasn't issued yet), look for a live-reference field
+first (`caProvider` instead of baking `caBundle` into the `ClusterSecretStore`, in ESO's case) -
+check the actual live CRD schema (`kubectl get crd <name> -o json`) rather than assuming an older
+chart version's values shape still applies.
+
+**One accepted edge case, not engineered around:** on a genuinely from-scratch cluster, a resource
+that needs another chart's CRD to exist (`selfsigned-issuer` needs cert-manager's `ClusterIssuer`
+CRD; `cluster_secret_store` needs ESO's `ClusterSecretStore` CRD) could theoretically lose the race
+if Tofu applies it before ArgoCD has synced the owning chart - this fails as a hard apply-time
+error (not a crash-loop), and the fix is just running `tofu apply` a second time. In practice
+CRDs land within seconds of a Helm release syncing, so this is a low-probability one-time hiccup,
+not a repeat of the incremental debugging this design replaced.
