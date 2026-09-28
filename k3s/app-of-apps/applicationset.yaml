@@ -167,3 +167,9 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+          # ESO's ClusterSecretStore/SecretStore CRDs are large enough (many provider schemas)
+          # that the client-side apply's kubectl.kubernetes.io/last-applied-configuration
+          # annotation exceeds Kubernetes' 262144-byte annotation limit. Server-side apply
+          # doesn't use that annotation at all, avoiding the size limit. Applied cluster-wide
+          # here (safe for every component, not just ESO).
+          - ServerSideApply=true
