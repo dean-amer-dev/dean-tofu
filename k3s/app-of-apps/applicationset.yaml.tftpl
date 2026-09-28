@@ -90,7 +90,11 @@ spec:
 
           - name: external-dns-do
             namespace: app-of-apps
-            repoURL: oci://registry.k8s.io/external-dns/charts/external-dns
+            # NOT an OCI registry - registry.k8s.io/external-dns/charts/external-dns has zero
+            # published tags (verified live: empty tags list via the registry's own API), a
+            # research error that sat unnoticed since the first apply. The real, current,
+            # official source is a classic Helm HTTP repo (confirmed via the chart's own README).
+            repoURL: https://kubernetes-sigs.github.io/external-dns/
             chart: external-dns
             targetRevision: 1.22.0
             syncWave: "4"
