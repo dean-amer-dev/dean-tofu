@@ -47,6 +47,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: alertmanager.amer.dev,alerts.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -111,6 +112,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: comfy.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -164,6 +166,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: couchdb.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -217,6 +220,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: grafana.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -270,6 +274,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: ha.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -323,6 +328,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: z2m-dean-1.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
@@ -375,6 +381,7 @@ spec:
                 annotations:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: komodo.amer.dev
+                  external-dns.alpha.kubernetes.io/target: 10.100.20.171
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
                 tls:
