@@ -28,7 +28,7 @@ provider "kubectl" {
 }
 
 variable "kubeconfig_path" {
-  description = "Path to the gmktec kubeconfig (points at the VIP, 10.100.20.161)"
+  description = "Path to the dean kubeconfig (points at the VIP, 10.100.20.161)"
   type        = string
-  default     = "~/.kube/gmktec.yaml"
+  default     = "~/.kube/dean.yaml"
 }
