@@ -4,3 +4,5 @@
 *.tfvars
 crash.log
 crash.*.log
+.envrc
+.bw-provider-state
