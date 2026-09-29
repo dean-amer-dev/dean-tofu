@@ -1,0 +1,62 @@
+{
+    "groups": {
+        "group:guests": ["eafalck@gmail.com"],
+    },
+
+    "tagOwners": {
+        "tag:inner-sanctum": ["autogroup:admin"],
+        "tag:subnet-router": ["autogroup:admin"],
+        "tag:guest":         ["autogroup:admin"],
+        "tag:k8s-operator":  [],
+        "tag:k8s":           ["tag:k8s-operator"],
+    },
+
+    "acls": [
+        {
+            "action": "accept",
+            "src":    ["amerenda@github"],
+            "dst":    ["*:*"],
+        },
+        {
+            "action": "accept",
+            "src":    ["tag:inner-sanctum"],
+            "dst":    ["*:*"],
+        },
+        {
+            "action": "accept",
+            "src":    ["tag:guest", "group:guests"],
+            "dst":    ["tag:subnet-router:3002"],
+        },
+        {
+            "action": "accept",
+            "src":    ["tag:guest", "group:guests"],
+            "dst":    ["10.100.20.0/24:53,80,443,3000,3001,8080,8443,8888,9000,9090"],
+        },
+    ],
+
+    "autoApprovers": {
+        "routes": {
+            "10.100.20.0/24": ["tag:inner-sanctum", "tag:k8s"],
+        },
+        "exitNode": ["amerenda@github", "tag:inner-sanctum", "tag:k8s"],
+    },
+
+    "ssh": [
+        {
+            "action": "accept",
+            "src":    ["amerenda@github"],
+            "dst":    ["amerenda@github"],
+            "users":  ["autogroup:nonroot"],
+        },
+    ],
+    "nodeAttrs": [
+        {
+            // Funnel policy, which lets tailnet members control Funnel
+            // for their own devices.
+            // Learn more at https://tailscale.com/kb/1223/tailscale-funnel/
+            "target": ["autogroup:member"],
+            "attr":   ["funnel"],
+        },
+        {"target": ["100.84.110.83"], "attr": ["funnel"]},
+    ],
+}
