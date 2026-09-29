@@ -66,3 +66,9 @@ resource "kubectl_manifest" "acme_staging_issuer" {
   depends_on = [kubectl_manifest.selfsigned_issuer]
   yaml_body  = file("${path.module}/acme-clusterissuer.yaml")
 }
+
+# Cut over 2026-09-28 - see acme-clusterissuer-prod.yaml's header comment.
+resource "kubectl_manifest" "acme_prod_issuer" {
+  depends_on = [kubectl_manifest.selfsigned_issuer]
+  yaml_body  = file("${path.module}/acme-clusterissuer-prod.yaml")
+}
