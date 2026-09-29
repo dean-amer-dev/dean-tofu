@@ -45,7 +45,7 @@ spec:
                 name: alertmanager-mini-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: alertmanager.amer.dev,alerts.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -109,7 +109,7 @@ spec:
                 name: comfyui-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: comfy.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -162,7 +162,7 @@ spec:
                 name: couchdb-mini-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: couchdb.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -215,7 +215,7 @@ spec:
                 name: grafana-mini-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: grafana.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -268,7 +268,7 @@ spec:
                 name: ha-mini-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: ha.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -321,7 +321,7 @@ spec:
                 name: z2m-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: z2m-dean-1.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -373,7 +373,7 @@ spec:
                 name: komodo-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: komodo.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
               spec:
@@ -398,7 +398,7 @@ spec:
                 name: ha-pub-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
               spec:
                 tls:
                   - hosts:
@@ -441,7 +441,7 @@ spec:
                 name: pubhooks-github-ingress-amer-dev
                 namespace: default
                 annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-staging
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
               spec:
                 tls:
                   - hosts:
