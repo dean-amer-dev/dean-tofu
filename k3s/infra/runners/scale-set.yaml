@@ -45,7 +45,7 @@ spec:
                 fsGroup: 1000
               containers:
                 - name: runner
-                  image: ghcr.io/actions/actions-runner:2.328.0
+                  image: ghcr.io/actions/actions-runner:2.337.0
                   command: ["/home/runner/run.sh"]
                   env:
                     - name: BUILDKIT_HOST
