@@ -898,6 +898,244 @@ spec:
                             cpu: 100m
                             memory: 128Mi
 
+          # Legacy source: k3s-dean-gitops apps/mcp/kubernetes-mcp/serviceaccount.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: kubernetes-mcp
+            namespace: mcp-kubernetes-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: v1
+                kind: ServiceAccount
+                metadata:
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRole
+                metadata:
+                  name: kubernetes-mcp-extra-view
+                rules:
+                - apiGroups:
+                  - ''
+                  resources:
+                  - nodes
+                  - persistentvolumes
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - argoproj.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - traefik.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - monitoring.coreos.com
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - longhorn.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - metallb.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - cert-manager.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - external-secrets.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - keda.sh
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - actions.github.com
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - cilium.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: kubernetes-mcp-extra-view-binding
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: kubernetes-mcp-extra-view
+                subjects:
+                - kind: ServiceAccount
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: kubernetes-mcp-view-binding
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: view
+                subjects:
+                - kind: ServiceAccount
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: kubernetes-mcp-nginx-proxy
+                  namespace: mcp-kubernetes-mcp
+                data:
+                  default.conf: "server {\n  listen 8080;\n  location / {\n    # Rewrite Host header to \"localhost\" so the MCP server accepts the request.\n    # Without this, the FQDN from cluster DNS causes host validation failure.\n    proxy_pass http://127.0.0.1:3000;\n    proxy_set_header Host localhost;\n\n    # HTTP/1.1 + empty Connection header = keep-alive to upstream\n    proxy_http_version 1.1;\n    proxy_set_header Connection \"\";\n\n    # Accommodate long-running kubernetes tool calls (list/watch, logs)\n    proxy_read_timeout 300s;\n  }\n}\n"
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: kubernetes-mcp-server
+                  namespace: mcp-kubernetes-mcp
+                spec:
+                  selector:
+                    app: kubernetes-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8080
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: kubernetes-mcp-server
+                  namespace: mcp-kubernetes-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: kubernetes-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: kubernetes-mcp-server
+                    spec:
+                      serviceAccountName: kubernetes-mcp-sa
+                      containers:
+                      - name: server
+                        image: flux159/mcp-server-kubernetes@sha256:7aa82daa1f10f4305dd8b47fc0351250c342066edc52a68254bb50a84ec067a1
+                        imagePullPolicy: IfNotPresent
+                        ports:
+                        - containerPort: 3000
+                        env:
+                        - name: HOST
+                          value: 0.0.0.0
+                        - name: ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT
+                          value: 'true'
+                        - name: ALLOW_ONLY_READONLY_TOOLS
+                          value: 'true'
+                        readinessProbe:
+                          exec:
+                            command:
+                            - sh
+                            - -c
+                            - curl -s -o /dev/null -m 5 http://localhost:3000/mcp
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                          timeoutSeconds: 8
+                          failureThreshold: 3
+                        livenessProbe:
+                          exec:
+                            command:
+                            - sh
+                            - -c
+                            - curl -s -o /dev/null -m 5 http://localhost:3000/mcp
+                          initialDelaySeconds: 15
+                          periodSeconds: 20
+                          timeoutSeconds: 8
+                          failureThreshold: 6
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 96Mi
+                          limits:
+                            cpu: 300m
+                            memory: 256Mi
+                      - name: host-proxy
+                        image: nginx:alpine
+                        ports:
+                        - containerPort: 8080
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8080
+                          initialDelaySeconds: 2
+                          periodSeconds: 5
+                        volumeMounts:
+                        - name: nginx-conf
+                          mountPath: /etc/nginx/conf.d
+                          readOnly: true
+                        resources:
+                          requests:
+                            cpu: 5m
+                            memory: 16Mi
+                          limits:
+                            cpu: 50m
+                            memory: 32Mi
+                      volumes:
+                      - name: nginx-conf
+                        configMap:
+                          name: kubernetes-mcp-nginx-proxy
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
