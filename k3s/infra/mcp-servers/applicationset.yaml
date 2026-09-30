@@ -459,6 +459,135 @@ spec:
                                   port:
                                     number: 8000
 
+          # Legacy source: k3s-dean-gitops apps/github-mcp/server/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: github-mcp
+            namespace: github-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: github-mcp-secrets
+                  namespace: github-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: github-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: GITHUB_APP_ID
+                    remoteRef:
+                      key: github-amerenda-coder-app-id
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: GITHUB_APP_PRIVATE_KEY
+                    remoteRef:
+                      key: github-amerenda-coder-private-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: GITHUB_APP_INSTALLATION_ID
+                    remoteRef:
+                      key: github-amerenda-coder-installation-id
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: github-mcp-server
+                  namespace: github-mcp
+                spec:
+                  selector:
+                    app: github-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: github-mcp-server
+                  namespace: github-mcp
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: github-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      annotations:
+                        reloader.stakater.com/auto: 'true'
+                      labels:
+                        app: github-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/github-mcp:sha-a38bd82
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        envFrom:
+                        - secretRef:
+                            name: github-mcp-secrets
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: github-mcp-ingress
+                  namespace: github-mcp
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: github-mcp.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - github-mcp.amer.dev
+                    secretName: github-mcp-amer-dev-tls
+                  rules:
+                  - host: github-mcp.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: github-mcp-server
+                            port:
+                              number: 8000
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
