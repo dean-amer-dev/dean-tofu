@@ -1,0 +1,158 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arc-runners
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/actions/actions-runner-controller-charts
+      chart: gha-runner-scale-set
+      targetRevision: 0.14.2
+      helm:
+        values: |
+          # One org-scoped scale set for dean-amer-dev (Default runner group). Builds use rootless
+          # BuildKit as a sidecar - no Docker socket, no privileged container (see the
+          # builds-run-in-cluster-on-buildkit decision). Reuses the k3s-arc-runners GitHub App.
+          githubConfigUrl: https://github.com/dean-amer-dev
+          githubConfigSecret: arc-github-app
+          runnerScaleSetName: arc-runner-set
+          minRunners: 0
+          maxRunners: 3
+          controllerServiceAccount:
+            name: arc-controller-gha-rs-controller
+            namespace: arc-systems
+          listenerTemplate:
+            metadata:
+              labels:
+                infra2.amer.dev/single-replica-exempt: "true"
+            spec:
+              containers:
+                - name: listener
+          template:
+            metadata:
+              labels:
+                app: arc-runner
+            spec:
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          app: arc-runner
+              securityContext:
+                fsGroup: 1000
+              containers:
+                - name: runner
+                  image: ghcr.io/actions/actions-runner:2.337.0
+                  command: ["/home/runner/run.sh"]
+                  env:
+                    - name: BUILDKIT_HOST
+                      value: unix:///run/buildkit/buildkitd.sock
+                  resources:
+                    requests:
+                      cpu: 500m
+                      memory: 1Gi
+                    limits:
+                      memory: 3Gi
+                  volumeMounts:
+                    - name: buildkit-socket
+                      mountPath: /run/buildkit
+                - name: buildkitd
+                  image: moby/buildkit:v0.23.2-rootless
+                  args:
+                    - --addr
+                    - unix:///run/buildkit/buildkitd.sock
+                    - --oci-worker-no-process-sandbox
+                  securityContext:
+                    runAsUser: 1000
+                    runAsGroup: 1000
+                    seccompProfile:
+                      type: Unconfined
+                    appArmorProfile:
+                      type: Unconfined
+                  env:
+                    - name: BUILDKITD_FLAGS
+                      value: --oci-worker-no-process-sandbox
+                  readinessProbe:
+                    exec:
+                      command: ["buildctl", "--addr", "unix:///run/buildkit/buildkitd.sock", "debug", "workers"]
+                    initialDelaySeconds: 3
+                    periodSeconds: 5
+                  resources:
+                    requests:
+                      cpu: 1
+                      memory: 2Gi
+                    limits:
+                      memory: 6Gi
+                  volumeMounts:
+                    - name: buildkit-socket
+                      mountPath: /run/buildkit
+                    - name: buildkit-state
+                      mountPath: /home/user/.local/share/buildkit
+              volumes:
+                - name: buildkit-socket
+                  emptyDir: {}
+                - name: buildkit-state
+                  emptyDir: {}
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+            - apiVersion: external-secrets.io/v1
+              kind: ExternalSecret
+              metadata:
+                name: arc-github-app
+                namespace: arc-runners
+              spec:
+                refreshInterval: 1h
+                secretStoreRef:
+                  name: bitwarden-secretsmanager
+                  kind: ClusterSecretStore
+                target:
+                  name: arc-github-app
+                  creationPolicy: Owner
+                data:
+                  - secretKey: github_app_id
+                    remoteRef:
+                      key: github-app-arc-id
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: github_app_installation_id
+                    remoteRef:
+                      key: github-app-arc-installation-id-dean
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: github_app_private_key
+                    remoteRef:
+                      key: github-app-arc-private-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: actions.github.com
+      kind: AutoscalingRunnerSet
+      jsonPointers:
+        - /status/pendingEphemeralRunners
+        - /status/currentRunners
