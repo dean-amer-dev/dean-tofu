@@ -253,6 +253,212 @@ spec:
                                 cpu: 200m
                                 memory: 128Mi
 
+          # Legacy source: k3s-dean-gitops/apps/infra-mcp/server/. Changes: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, legacy `property: password`
+          # dropped, Traefik ingress annotations/ingressClassName dropped, reloader annotation on
+          # the pod template kept. RBAC (observer ClusterRole + tofu-state Role) kept verbatim.
+          - name: infra-mcp
+            namespace: infra-mcp
+            valuesYaml: |
+              resources:
+                - apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: infra-mcp-secrets
+                    namespace: infra-mcp
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: bitwarden-secretsmanager
+                      kind: ClusterSecretStore
+                    target:
+                      name: infra-mcp-secrets
+                      creationPolicy: Owner
+                      deletionPolicy: Retain
+                    data:
+                      - secretKey: bws-access-token
+                        remoteRef:
+                          key: infra-mcp-bws-token
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-app-id
+                        remoteRef:
+                          key: github-amerenda-coder-app-id
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-installation-id
+                        remoteRef:
+                          key: github-amerenda-coder-installation-id
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-private-key
+                        remoteRef:
+                          key: github-amerenda-coder-private-key
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                - apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: infra-mcp-server
+                    namespace: infra-mcp
+                  spec:
+                    selector:
+                      app: infra-mcp-server
+                    ports:
+                      - name: http
+                        port: 8000
+                        targetPort: 8000
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRole
+                  metadata:
+                    name: infra-mcp-observer
+                  rules:
+                    - apiGroups: ["argoproj.io"]
+                      resources: ["applications"]
+                      verbs: ["get", "list"]
+                    - apiGroups: [""]
+                      resources: ["pods"]
+                      verbs: ["get", "list"]
+                    - apiGroups: ["apps"]
+                      resources: ["deployments"]
+                      verbs: ["get", "list"]
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRoleBinding
+                  metadata:
+                    name: infra-mcp-observer
+                  subjects:
+                    - kind: ServiceAccount
+                      name: default
+                      namespace: infra-mcp
+                  roleRef:
+                    kind: ClusterRole
+                    name: infra-mcp-observer
+                    apiGroup: rbac.authorization.k8s.io
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: Role
+                  metadata:
+                    name: tofu-state
+                    namespace: infra-mcp
+                  rules:
+                    - apiGroups: [""]
+                      resources: ["secrets"]
+                      verbs: ["create", "get", "list", "update", "patch", "delete"]
+                    - apiGroups: ["coordination.k8s.io"]
+                      resources: ["leases"]
+                      verbs: ["create", "get", "list", "update", "patch", "delete"]
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: RoleBinding
+                  metadata:
+                    name: tofu-state
+                    namespace: infra-mcp
+                  subjects:
+                    - kind: ServiceAccount
+                      name: default
+                      namespace: infra-mcp
+                  roleRef:
+                    kind: Role
+                    name: tofu-state
+                    apiGroup: rbac.authorization.k8s.io
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: infra-mcp-server
+                    namespace: infra-mcp
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: infra-mcp-server
+                    strategy:
+                      type: RollingUpdate
+                      rollingUpdate:
+                        maxUnavailable: 0
+                        maxSurge: 1
+                    template:
+                      metadata:
+                        annotations:
+                          reloader.stakater.com/auto: "true"
+                        labels:
+                          app: infra-mcp-server
+                      spec:
+                        containers:
+                          - name: server
+                            image: amerenda/infra-mcp:sha-a38bd82
+                            imagePullPolicy: Always
+                            ports:
+                              - containerPort: 8000
+                            env:
+                              - name: BWS_ACCESS_TOKEN
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: bws-access-token
+                              - name: CODER_APP_ID
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-app-id
+                              - name: CODER_INSTALLATION_ID
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-installation-id
+                              - name: CODER_APP_PRIVATE_KEY
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-private-key
+                              - name: CLONE_REPOS
+                                value: "true"
+                            readinessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 5
+                              periodSeconds: 10
+                            livenessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 10
+                              periodSeconds: 30
+                            resources:
+                              requests:
+                                cpu: 100m
+                                memory: 256Mi
+                              limits:
+                                cpu: 500m
+                                memory: 512Mi
+                - apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: infra-mcp-ingress
+                    namespace: infra-mcp
+                    annotations:
+                      cert-manager.io/cluster-issuer: letsencrypt-prod
+                      external-dns.alpha.kubernetes.io/hostname: infra-mcp.amer.dev
+                      external-dns.alpha.kubernetes.io/ttl: "300"
+                  spec:
+                    tls:
+                      - hosts:
+                          - infra-mcp.amer.dev
+                        secretName: infra-mcp-amer-dev-tls
+                    rules:
+                      - host: infra-mcp.amer.dev
+                        http:
+                          paths:
+                            - path: /
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: infra-mcp-server
+                                  port:
+                                    number: 8000
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
