@@ -1,0 +1,1050 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-ingress-private
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+            # ---------------------------------------------------------------
+            # LAN/Tailscale-only services. Every Ingress below carries
+            # ingress.cilium.io/loadbalancer-mode: dedicated + the same
+            # lbipam.cilium.io/sharing-key, so the whole group is pulled off
+            # the cluster's default shared Ingress IP (10.100.20.171 - the
+            # one the router NATs public :80/:443 to for external-ingress-
+            # public) onto one separate, non-forwarded private IP. Reachable
+            # from LAN and Tailscale (the subnet router already advertises
+            # 10.100.20.0/24) but never from the internet, by construction -
+            # no IP-allowlist policy needed. See Projects/Infrastructure-2.0
+            # notes for the full reasoning.
+            # ---------------------------------------------------------------
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: alertmanager-mini-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 9093
+                    targetPort: 9093
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: alertmanager-mini-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: alertmanager-mini-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 9093
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: alertmanager-mini-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: alertmanager.amer.dev,alerts.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - alertmanager.amer.dev
+                      - alerts.amer.dev
+                    secretName: alertmanager-amer-dev-tls
+                rules:
+                  - host: alertmanager.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: alertmanager-mini-external
+                              port:
+                                number: 9093
+                  - host: alerts.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: alertmanager-mini-external
+                              port:
+                                number: 9093
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: comfyui-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8188
+                    targetPort: 8188
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: comfyui-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: comfyui-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8188
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: comfyui-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: comfy.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - comfy.amer.dev
+                    secretName: comfy-amer-dev-tls
+                rules:
+                  - host: comfy.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: comfyui-external
+                              port:
+                                number: 8188
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: couchdb-mini-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 5984
+                    targetPort: 5984
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: couchdb-mini-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: couchdb-mini-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 5984
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: couchdb-mini-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: couchdb.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - couchdb.amer.dev
+                    secretName: couchdb-amer-dev-tls
+                rules:
+                  - host: couchdb.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: couchdb-mini-external
+                              port:
+                                number: 5984
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: grafana-mini-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 3000
+                    targetPort: 3000
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: grafana-mini-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: grafana-mini-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 3000
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: grafana-mini-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: grafana.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - grafana.amer.dev
+                    secretName: grafana-amer-dev-tls
+                rules:
+                  - host: grafana.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: grafana-mini-external
+                              port:
+                                number: 3000
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: ha-mini-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8123
+                    targetPort: 8123
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: ha-mini-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: ha-mini-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8123
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: ha-mini-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: ha.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - ha.amer.dev
+                    secretName: ha-amer-dev-tls
+                rules:
+                  - host: ha.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: ha-mini-external
+                              port:
+                                number: 8123
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: z2m-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8099
+                    targetPort: 8099
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: z2m-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: z2m-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8099
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: z2m-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: z2m-dean-1.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - z2m-dean-1.amer.dev
+                    secretName: z2m-dean-1-amer-dev-tls
+                rules:
+                  - host: z2m-dean-1.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: z2m-external
+                              port:
+                                number: 8099
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: komodo-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 9120
+                    targetPort: 9120
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: komodo-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: komodo-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.18
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 9120
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: komodo-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: komodo.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - komodo.amer.dev
+                    secretName: komodo-amer-dev-tls
+                rules:
+                  - host: komodo.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: komodo-external
+                              port:
+                                number: 9120
+
+            # ---------------------------------------------------------------
+            # Media stack (murderbot, 10.100.20.19). Ported from legacy's
+            # single Traefik IngressRoute + media-allowlist Middleware
+            # (k3s-dean-gitops/infra/ingresses/jellyfin-ingress-amer-dev.yaml)
+            # - same hosts/ports, one wildcard cert, no per-ingress
+            # cert-manager annotation (would create 11 duplicate Certificates
+            # for the same secret - one explicit Certificate below instead).
+            # Security here comes from being in this dedicated-mode group
+            # (never WAN-forwarded), replacing the old ipAllowList Middleware
+            # - not from an equivalent in-cluster policy.
+            # ---------------------------------------------------------------
+            - apiVersion: cert-manager.io/v1
+              kind: Certificate
+              metadata:
+                name: media-amer-dev
+                namespace: default
+              spec:
+                secretName: media-amer-dev-tls
+                dnsNames:
+                  - media.amer.dev
+                  - "*.media.amer.dev"
+                issuerRef:
+                  name: letsencrypt-prod
+                  kind: ClusterIssuer
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: jellyfin-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8096
+                    targetPort: 8096
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: jellyfin-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: jellyfin-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8096
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: jellyfin-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: jellyfin-external
+                              port:
+                                number: 8096
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: sonarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8989
+                    targetPort: 8989
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: sonarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: sonarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8989
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: sonarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: sonarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - sonarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: sonarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: sonarr-external
+                              port:
+                                number: 8989
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: radarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 7878
+                    targetPort: 7878
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: radarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: radarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 7878
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: radarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: radarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - radarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: radarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: radarr-external
+                              port:
+                                number: 7878
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: bazarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 6767
+                    targetPort: 6767
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: bazarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: bazarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 6767
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: bazarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: bazarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - bazarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: bazarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: bazarr-external
+                              port:
+                                number: 6767
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: prowlarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 9696
+                    targetPort: 9696
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: prowlarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: prowlarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 9696
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: prowlarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: prowlarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - prowlarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: prowlarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: prowlarr-external
+                              port:
+                                number: 9696
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: profilarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 6868
+                    targetPort: 6868
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: profilarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: profilarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 6868
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: profilarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: profilarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - profilarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: profilarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: profilarr-external
+                              port:
+                                number: 6868
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: sabnzbd-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 8081
+                    targetPort: 8081
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: sabnzbd-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: sabnzbd-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 8081
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: sabnzbd-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: sabnzbd.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - sabnzbd.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: sabnzbd.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: sabnzbd-external
+                              port:
+                                number: 8081
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: seerr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 5055
+                    targetPort: 5055
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: seerr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: seerr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 5055
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: seerr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: seerr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - seerr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: seerr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: seerr-external
+                              port:
+                                number: 5055
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: shelfarr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 5056
+                    targetPort: 5056
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: shelfarr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: shelfarr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 5056
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: shelfarr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: shelfarr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - shelfarr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: shelfarr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: shelfarr-external
+                              port:
+                                number: 5056
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: bookorbit-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 3005
+                    targetPort: 3005
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: bookorbit-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: bookorbit-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 3005
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: bookorbit-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: bookorbit.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - bookorbit.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: bookorbit.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: bookorbit-external
+                              port:
+                                number: 3005
+
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: maintainerr-external
+                namespace: default
+              spec:
+                ports:
+                  - port: 6246
+                    targetPort: 6246
+                    protocol: TCP
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                name: maintainerr-external-1
+                namespace: default
+                labels:
+                  kubernetes.io/service-name: maintainerr-external
+              addressType: IPv4
+              endpoints:
+                - addresses:
+                    - 10.100.20.19
+                  conditions:
+                    ready: true
+              ports:
+                - name: ""
+                  port: 6246
+                  protocol: TCP
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: maintainerr-ingress-amer-dev
+                namespace: default
+                annotations:
+                  external-dns.alpha.kubernetes.io/hostname: maintainerr.media.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - maintainerr.media.amer.dev
+                    secretName: media-amer-dev-tls
+                rules:
+                  - host: maintainerr.media.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: maintainerr-external
+                              port:
+                                number: 6246
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

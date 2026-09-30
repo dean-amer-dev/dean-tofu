@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/external-ingress"
+    prefix = "k3s/infra/external-ingress-private"
   }
 }
 

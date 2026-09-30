@@ -1,0 +1,109 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-ingress-public
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+            # Genuinely-public services on the shared, WAN-forwarded
+            # 10.100.20.171 (the EdgeRouter NATs public :80/:443 here) -
+            # moved verbatim from k3s/infra/external-ingress (2026-09-29
+            # private/public split). ha-mini-external / komodo-external
+            # (the backend Services these reference) live in
+            # external-ingress-private; Ingress objects can reference a
+            # Service by name regardless of which Application created it.
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: ha-pub-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+              spec:
+                tls:
+                  - hosts:
+                      - ha.pub.amer.dev
+                    secretName: ha-pub-amer-dev-tls
+                rules:
+                  - host: ha.pub.amer.dev
+                    http:
+                      paths:
+                        - path: /auth/
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: ha-mini-external
+                              port:
+                                number: 8123
+                        - path: /api/google_assistant
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: ha-mini-external
+                              port:
+                                number: 8123
+            - apiVersion: externaldns.k8s.io/v1alpha1
+              kind: DNSEndpoint
+              metadata:
+                name: ha-pub-amer-dev
+                namespace: default
+              spec:
+                endpoints:
+                  - dnsName: ha.pub.amer.dev
+                    recordTTL: 300
+                    recordType: A
+                    targets:
+                      - 67.250.70.153
+
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: pubhooks-github-ingress-amer-dev
+                namespace: default
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+              spec:
+                tls:
+                  - hosts:
+                      - pubhooks.amer.dev
+                    secretName: pubhooks-amer-dev-tls
+                rules:
+                  - host: pubhooks.amer.dev
+                    http:
+                      paths:
+                        - path: /listener/github/
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: komodo-external
+                              port:
+                                number: 9120
+            - apiVersion: externaldns.k8s.io/v1alpha1
+              kind: DNSEndpoint
+              metadata:
+                name: pubhooks-amer-dev
+                namespace: default
+              spec:
+                endpoints:
+                  - dnsName: pubhooks.amer.dev
+                    recordTTL: 300
+                    recordType: A
+                    targets:
+                      - 67.250.70.153
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
