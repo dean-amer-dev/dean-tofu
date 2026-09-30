@@ -588,6 +588,128 @@ spec:
                             port:
                               number: 8000
 
+          # Legacy source: k3s-dean-gitops apps/praetor-mcp/server/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: praetor-mcp
+            namespace: praetor-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: praetor-mcp-secrets
+                  namespace: praetor-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: praetor-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: PRAETOR_API_KEY
+                    remoteRef:
+                      key: praetor-api-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: praetor-mcp-server
+                  namespace: praetor-mcp
+                spec:
+                  selector:
+                    app: praetor-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: praetor-mcp-server
+                  namespace: praetor-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: praetor-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: praetor-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/praetor-mcp:sha-8076367
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: PRAETOR_BASE_URL
+                          value: https://praetor.amer.dev
+                        - name: PRAETOR_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: praetor-mcp-secrets
+                              key: PRAETOR_API_KEY
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: praetor-mcp-ingress
+                  namespace: praetor-mcp
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: praetor-mcp.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - praetor-mcp.amer.dev
+                    secretName: praetor-mcp-amer-dev-tls
+                  rules:
+                  - host: praetor-mcp.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: praetor-mcp-server
+                            port:
+                              number: 8000
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
