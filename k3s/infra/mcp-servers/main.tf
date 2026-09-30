@@ -28,3 +28,10 @@ variable "kubeconfig_path" {
 resource "kubectl_manifest" "applicationset" {
   yaml_body = file("${path.module}/applicationset.yaml")
 }
+
+# litellm lives in this folder (and state) so that adding an MCP server - an ApplicationSet element
+# plus its entry in litellm's mcp_servers block - is one PR and one `tofu apply`. Previously it had
+# its own folder/state (prefix k3s/infra/litellm); migrated here via `tofu state mv`.
+resource "kubectl_manifest" "litellm" {
+  yaml_body = file("${path.module}/litellm-application.yaml")
+}
