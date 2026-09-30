@@ -377,15 +377,22 @@ spec:
                 target:
                   name: litellm-secrets
                   creationPolicy: Owner
+                  deletionPolicy: Retain
                 data:
                   - secretKey: master-key
                     remoteRef:
                       key: litellm-master-key
                       property: password
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
                   - secretKey: database-url
                     remoteRef:
                       key: litellm-database-url
                       property: password
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
                   # Used only by the postStart owu-refresh-hook (see owu-refresh-hook ConfigMap
                   # above) to sign in to OWU and re-trigger its tool-server connection refresh
                   # after this pod restarts.
@@ -393,6 +400,9 @@ spec:
                     remoteRef:
                       key: openwebui-dean-admin-password
                       property: password
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
             - apiVersion: v1
               kind: Service
               metadata:
