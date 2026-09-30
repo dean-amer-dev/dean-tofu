@@ -155,6 +155,104 @@ spec:
                                   port:
                                     number: 8787
 
+          # Legacy source: k3s-dean-gitops/apps/bws-mcp/server/. Only changes: secretStoreRef.name
+          # fixed to bitwarden-secretsmanager, ESO-defaulted fields declared explicitly (avoids
+          # the ArgoCD OutOfSync drift seen on litellm/obsidian-mcp), legacy `property: password`
+          # dropped (native BWS provider returns the value directly). No ingress in legacy either
+          # - in-cluster only, reached through litellm.
+          - name: bws-mcp
+            namespace: bws-mcp
+            valuesYaml: |
+              resources:
+                - apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: bws-mcp-token
+                    namespace: bws-mcp
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: bitwarden-secretsmanager
+                      kind: ClusterSecretStore
+                    target:
+                      name: bws-mcp-token
+                      creationPolicy: Owner
+                      deletionPolicy: Retain
+                    data:
+                      - secretKey: token
+                        remoteRef:
+                          key: infra-mcp-bws-token
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                - apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: bws-mcp-server
+                    namespace: bws-mcp
+                  spec:
+                    selector:
+                      app: bws-mcp-server
+                    ports:
+                      - name: http
+                        port: 8000
+                        targetPort: 8000
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: bws-mcp-server
+                    namespace: bws-mcp
+                    annotations:
+                      reloader.stakater.com/auto: "true"
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: bws-mcp-server
+                    strategy:
+                      type: RollingUpdate
+                      rollingUpdate:
+                        maxUnavailable: 0
+                        maxSurge: 1
+                    template:
+                      metadata:
+                        labels:
+                          app: bws-mcp-server
+                      spec:
+                        containers:
+                          - name: server
+                            image: amerenda/bws-mcp:sha-a38bd82
+                            imagePullPolicy: Always
+                            ports:
+                              - containerPort: 8000
+                            env:
+                              - name: BWS_ACCESS_TOKEN
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: bws-mcp-token
+                                    key: token
+                              - name: BWS_PROJECT_ID
+                                value: "6353f589-39c0-45f2-9e9c-b36f00e0c282"
+                            readinessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 5
+                              periodSeconds: 10
+                            livenessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 10
+                              periodSeconds: 30
+                            resources:
+                              requests:
+                                cpu: 50m
+                                memory: 64Mi
+                              limits:
+                                cpu: 200m
+                                memory: 128Mi
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
