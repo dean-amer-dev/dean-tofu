@@ -212,14 +212,17 @@ spec:
                     retry_policy:
                       BadRequestErrorRetries: 3
 
-                  # mcp_servers block dropped here (2026-09-29 gmktec port): all 10 entries pointed
-                  # at in-cluster Services on the dead legacy cluster (mcp-searxng, secure-search,
-                  # infra, github, kubernetes-mcp, praetor, grafana-mcp, komodo-mcp, obsidian-mcp,
-                  # bws-mcp — homeassistant was already removed before this outage, stays removed).
+                  # Remaining 9 entries still dropped (2026-09-29 gmktec port): mcp-searxng,
+                  # secure-search, infra, github, kubernetes-mcp, praetor, grafana-mcp, komodo-mcp,
+                  # bws-mcp — homeassistant was already removed before this outage, stays removed.
                   # Restored incrementally, one server at a time, via the mcp-servers
                   # ApplicationSet (k3s/infra/mcp-servers/) as each is ported — see
                   # instructions/infra2-infra-tier-plan-draft.md Phase D. Each restored entry is
                   # added back here verbatim from k3s-dean-gitops/apps/litellm/server/configmap.yaml.
+                  mcp_servers:
+                    obsidian-mcp:
+                      url: "http://obsidian-mcp-server.mcp-obsidian.svc.cluster.local:8787/mcp"
+                      transport: "http"
 
                   litellm_settings:
                     drop_params: true
