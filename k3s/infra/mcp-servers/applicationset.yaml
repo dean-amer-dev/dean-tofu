@@ -802,6 +802,102 @@ spec:
                             cpu: 100m
                             memory: 128Mi
 
+          # Legacy source: k3s-dean-gitops apps/mcp/komodo-mcp/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: komodo-mcp
+            namespace: mcp-komodo-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: komodo-mcp-secrets
+                  namespace: mcp-komodo-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: komodo-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: komodo_api_key
+                    remoteRef:
+                      key: komodo-dean-api-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: komodo_api_secret
+                    remoteRef:
+                      key: komodo-dean-api-secret
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: komodo-mcp-server
+                  namespace: mcp-komodo-mcp
+                spec:
+                  selector:
+                    app: komodo-mcp-server
+                  ports:
+                  - port: 8000
+                    targetPort: 8000
+                    protocol: TCP
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: komodo-mcp-server
+                  namespace: mcp-komodo-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: komodo-mcp-server
+                  template:
+                    metadata:
+                      labels:
+                        app: komodo-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/komodo-mcp:sha-e76f0be
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: KOMODO_BASE
+                          value: https://komodo.amer.dev
+                        - name: KOMODO_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: komodo-mcp-secrets
+                              key: komodo_api_key
+                        - name: KOMODO_API_SECRET
+                          valueFrom:
+                            secretKeyRef:
+                              name: komodo-mcp-secrets
+                              key: komodo_api_secret
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 100m
+                            memory: 128Mi
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
