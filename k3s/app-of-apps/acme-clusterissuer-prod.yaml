@@ -1,6 +1,8 @@
 # letsencrypt-PROD - cut over 2026-09-28 after letsencrypt-staging certs were manually verified
-# Ready across all 9 k3s/infra/external-ingress/ ingresses (see acme-clusterissuer.yaml's comment
-# for the original staging-until-confirmed policy this fulfills).
+# Ready across all external-ingress ingresses (see acme-clusterissuer.yaml's comment for the
+# original staging-until-confirmed policy this fulfills). The original 9 in
+# k3s/infra/external-ingress/ have since been split into k3s/infra/external-ingress-private/
+# and k3s/infra/external-ingress-public/ (2026-09-29); the old module is retired.
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
