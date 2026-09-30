@@ -239,6 +239,9 @@ spec:
                       url: "http://praetor-mcp-server.praetor-mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
+                    grafana-mcp:
+                      url: "http://grafana-mcp-server.mcp-grafana-mcp.svc.cluster.local:8000/mcp"
+                      transport: "http"
 
                   litellm_settings:
                     drop_params: true

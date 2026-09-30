@@ -710,6 +710,98 @@ spec:
                             port:
                               number: 8000
 
+          # Legacy source: k3s-dean-gitops apps/mcp/grafana-mcp/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: grafana-mcp
+            namespace: mcp-grafana-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: grafana-mcp-secrets
+                  namespace: mcp-grafana-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: grafana-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: grafana_api_key
+                    remoteRef:
+                      key: grafana-sa-mcp-user-token
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: grafana-mcp-server
+                  namespace: mcp-grafana-mcp
+                spec:
+                  selector:
+                    app: grafana-mcp-server
+                  ports:
+                  - port: 8000
+                    targetPort: 8000
+                    protocol: TCP
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: grafana-mcp-server
+                  namespace: mcp-grafana-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: grafana-mcp-server
+                  template:
+                    metadata:
+                      labels:
+                        app: grafana-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: grafana/mcp-grafana:latest
+                        imagePullPolicy: Always
+                        args:
+                        - -t
+                        - streamable-http
+                        - -address
+                        - 0.0.0.0:8000
+                        - -allowed-hosts
+                        - '*'
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: GRAFANA_URL
+                          value: https://grafana.amer.dev
+                        - name: GRAFANA_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: grafana-mcp-secrets
+                              key: grafana_api_key
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 100m
+                            memory: 128Mi
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
