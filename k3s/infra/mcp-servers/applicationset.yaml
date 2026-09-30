@@ -1,0 +1,177 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: mcp-servers
+  namespace: argocd
+spec:
+  # One ApplicationSet for all 9 MCP servers dropped from litellm's mcp_servers block when it was
+  # ported off the (now permanently dead) legacy k3s control plane - see
+  # instructions/infra2-infra-tier-plan-draft.md Phase D /
+  # instructions/infra2-infra-tier-background-draft.md for the full decision log. Same List
+  # generator + Go-template mechanism as k3s/app-of-apps/applicationset.yaml, adapted for
+  # hand-rolled manifests: every element points at the same bedag/raw chart (rather than each
+  # element's own upstream chart, as in the app-of-apps tier) and carries its own `resources:`
+  # list (Deployment/Service/ExternalSecret/Ingress as needed) inlined into valuesYaml.
+  #
+  # Deployed one server at a time, not all 9 at once: add the next element to this list, commit,
+  # `tofu apply`, verify that one server end-to-end (through litellm's mcp_servers block AND
+  # directly, where it has its own ingress) before adding the next. obsidian-mcp goes first - see
+  # the background note's priority order.
+  generators:
+    - list:
+        elements:
+          # Legacy source: k3s-dean-gitops/apps/mcp/obsidian/ (deployment.yaml, service.yaml,
+          # externalsecret.yaml, ingress.yaml). Only change from legacy: externalsecret.yaml's
+          # secretStoreRef.name fixed bitwarden-secretstore -> bitwarden-secretsmanager (the
+          # actual live ClusterSecretStore on gmktec - same fix as litellm's), ingress.yaml's
+          # Traefik-specific annotations + ingressClassName dropped (Cilium is cluster-default).
+          # letsencrypt-prod kept as-is per Alex's 2026-09-29 call (cert-manager's issuance path
+          # is verified, new gmktec ingresses go straight to prod). Depends on couchdb.amer.dev
+          # (already live via external-ingress-private, Phase B) - no new dependency to stand up.
+          - name: obsidian-mcp
+            namespace: mcp-obsidian
+            valuesYaml: |
+              resources:
+                - apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: obsidian-mcp-secrets
+                    namespace: mcp-obsidian
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: bitwarden-secretsmanager
+                      kind: ClusterSecretStore
+                    target:
+                      name: obsidian-mcp-secrets
+                      creationPolicy: Owner
+                    data:
+                      - secretKey: couchdb_password
+                        remoteRef:
+                          key: obsidian-mcp-bridge-couchdb-password
+                      - secretKey: e2ee_passphrase
+                        remoteRef:
+                          key: obsidian-livesync-e2e-passphrase
+                - apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: obsidian-mcp-server
+                    namespace: mcp-obsidian
+                  spec:
+                    selector:
+                      app: obsidian-mcp-server
+                    ports:
+                      - port: 8787
+                        targetPort: 8787
+                        protocol: TCP
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: obsidian-mcp-server
+                    namespace: mcp-obsidian
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: obsidian-mcp-server
+                    template:
+                      metadata:
+                        labels:
+                          app: obsidian-mcp-server
+                      spec:
+                        containers:
+                          - name: server
+                            image: ghcr.io/es617/obsidian-sync-mcp:latest
+                            imagePullPolicy: Always
+                            ports:
+                              - containerPort: 8787
+                            env:
+                              - name: COUCHDB_URL
+                                value: 'https://couchdb.amer.dev'
+                              - name: COUCHDB_USER
+                                value: 'obsidian-mcp-bridge'
+                              - name: COUCHDB_DATABASE
+                                value: 'obsidian-dean'
+                              - name: COUCHDB_OBFUSCATE_PROPERTIES
+                                value: 'false'
+                              - name: VAULT_NAME
+                                value: 'Dean'
+                              - name: PORT
+                                value: '8787'
+                              - name: MCP_ALLOWED_HOSTS
+                                value: 'obsidian-mcp-server,obsidian-mcp-server.mcp-obsidian,obsidian-mcp-server.mcp-obsidian.svc,obsidian-mcp-server.mcp-obsidian.svc.cluster.local,mcp-obsidian.amer.dev'
+                              - name: COUCHDB_PASSWORD
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: obsidian-mcp-secrets
+                                    key: couchdb_password
+                              - name: COUCHDB_PASSPHRASE
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: obsidian-mcp-secrets
+                                    key: e2ee_passphrase
+                            readinessProbe:
+                              tcpSocket:
+                                port: 8787
+                              initialDelaySeconds: 5
+                              periodSeconds: 10
+                            resources:
+                              requests:
+                                cpu: 50m
+                                memory: 128Mi
+                              limits:
+                                cpu: 300m
+                                memory: 256Mi
+                - apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: mcp-obsidian-ingress
+                    namespace: mcp-obsidian
+                    annotations:
+                      cert-manager.io/cluster-issuer: letsencrypt-prod
+                      external-dns.alpha.kubernetes.io/hostname: mcp-obsidian.amer.dev
+                      external-dns.alpha.kubernetes.io/ttl: "300"
+                  spec:
+                    tls:
+                      - hosts:
+                          - mcp-obsidian.amer.dev
+                        secretName: mcp-obsidian-amer-dev-tls
+                    rules:
+                      - host: mcp-obsidian.amer.dev
+                        http:
+                          paths:
+                            - path: /
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: obsidian-mcp-server
+                                  port:
+                                    number: 8787
+
+          # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
+          # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
+          # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
+          # same shape as obsidian-mcp above, once the previous one is verified working.
+
+  template:
+    metadata:
+      name: "mcp-{{name}}"
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://bedag.github.io/helm-charts/
+        chart: raw
+        targetRevision: 2.0.2
+        helm:
+          values: "{{valuesYaml}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
