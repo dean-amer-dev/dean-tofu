@@ -45,13 +45,20 @@ spec:
                     target:
                       name: obsidian-mcp-secrets
                       creationPolicy: Owner
+                      deletionPolicy: Retain
                     data:
                       - secretKey: couchdb_password
                         remoteRef:
                           key: obsidian-mcp-bridge-couchdb-password
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
                       - secretKey: e2ee_passphrase
                         remoteRef:
                           key: obsidian-livesync-e2e-passphrase
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
                 - apiVersion: v1
                   kind: Service
                   metadata:
