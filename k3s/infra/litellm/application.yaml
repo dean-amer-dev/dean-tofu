@@ -1,0 +1,582 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+            # Ported from k3s-dean-gitops/apps/litellm/server/ (2026-09-29, legacy k3s control
+            # plane confirmed permanently dead). Full decision log:
+            # instructions/infra2-infra-tier-background-draft.md's "LiteLLM + MCP servers"
+            # section. Three changes from the legacy source, everything else verbatim:
+            #   1. mcp_servers block + the image-gen model_list entry dropped from config.yaml
+            #      below (both point at other apps that only ever existed on the dead cluster;
+            #      added back incrementally as each is ported — see k3s/infra/mcp-servers/)
+            #   2. externalsecret.yaml's secretStoreRef.name fixed: bitwarden-secretstore (typo'd
+            #      legacy name) -> bitwarden-secretsmanager (the actual live ClusterSecretStore)
+            #   3. servicemonitor.yaml dropped entirely (no Prometheus Operator CRDs on gmktec)
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: litellm-config
+                namespace: litellm
+              data:
+                config.yaml: |
+                  model_list:
+                    # --- murderbot (RTX PRO 4000, 24GB, llama.cpp — model switchable, always hot) ---
+                    # Served alias is now the stable "murderbot-primary" (2026-08-19), NOT tied to any
+                    # specific model version. murderbot/llm/compose.yaml defines multiple Docker Compose
+                    # *profiles* (currently qwen36, qwen38) that all serve under this same
+                    # --alias murderbot-primary. Which profile is actually running is controlled by the
+                    # Komodo Variable MURDERBOT_LLM_PROFILE (read by pre-deploy.sh, NOT by git) via the
+                    # gpu-switcher service (murderbot/gpu-switcher/) -- switching models or switching this
+                    # GPU to the image-gen stack entirely is a runtime action, not a gitops PR. This block
+                    # of config therefore never needs to change when the active model changes -- that's
+                    # the whole point of the rename. See komodo-dean-gitops/murderbot/llm/compose.yaml and
+                    # murderbot/gpu-switcher/ for the full mechanism and each profile's flag-by-flag
+                    # rationale (every value arrived at by loading the model on this card and hitting real
+                    # failures first, not from docs).
+                    #
+                    # As of the 2026-08-19 migration, the qwen38 profile is active: Qwen3.8-27B-GGUF+MTP,
+                    # 49,152 ctx, ~40 tok/s. The qwen36 profile (Qwen3.6-35B-A3B+MTP, historically
+                    # 98,304 ctx / 120-140 tok/s on this card) is the other known-good option -- check
+                    # which is actually running via the gpu-switcher's /status endpoint or
+                    # `docker ps` on murderbot before assuming either number applies.
+                    #
+                    # No abliterated GGUF/NVFP4 quant of Qwen3.8-27B was available as of the 2026-08-19
+                    # migration -- the murderbot-uncensored-* presets below rely on prompt-based
+                    # uncensoring only when that profile is active, not true weight-level abliteration
+                    # like the old huihui-ai Qwen3.6 setup had. Check huggingface.co/sakamakismile and
+                    # huggingface.co/huihui-ai before assuming this is still true.
+
+                    # coder: used by OpenHands, praetor-coder-worker, and opencode.
+                    # parallel_tool_calls=false: coding agents must execute tools sequentially (read → edit → verify);
+                    # parallel calls cause race conditions on file state.
+                    # enable_thinking=false: coding agents want fast tool-call iteration, not long reasoning chains.
+                    # 40960/8192 = 49152 total: intentionally sized to the SMALLER of the two model
+                    # profiles (qwen38's -c 49152), not necessarily the currently-active one -- qwen36's
+                    # -c 98304 is larger, so this stays a safe (if conservative) budget regardless of
+                    # which profile the gpu-switcher has active. Bump only if a future profile has an
+                    # even smaller context than 49152.
+                    - model_name: coder
+                      litellm_params:
+                        model: openai/murderbot-primary
+                        api_base: http://10.100.20.19:8088/v1
+                        api_key: none
+                        timeout: 600
+                        extra_body:
+                          parallel_tool_calls: false
+                          chat_template_kwargs:
+                            enable_thinking: false
+                      model_info:
+                        max_input_tokens: 40960
+                        max_output_tokens: 8192
+                        supports_function_calling: true
+
+                    # murderbot-v1-base: legacy smaller-budget preset, kept only because existing OWU custom
+                    # models (murderbot-v1-custom) still reference it as a base_model_id. Same backend as
+                    # every other murderbot-* alias now — budgets deliberately left conservative/unchanged.
+                    # enable_thinking=false: praetor's smoke suite caught this live — with thinking on and
+                    # an 8192 output budget shared with reasoning, ordinary liveness requests (max_tokens
+                    # capped low by the caller) came back with finish_reason=length and EMPTY content,
+                    # because the whole budget was consumed by reasoning_content. Not a hypothetical risk,
+                    # a reproduced regression (TestLiveness::test_owui_model_responds, 2026-07-23).
+                    - model_name: murderbot-v1-base
+                      litellm_params:
+                        model: openai/murderbot-primary
+                        api_base: http://10.100.20.19:8088/v1
+                        api_key: none
+                        timeout: 600
+                        extra_body:
+                          parallel_tool_calls: false
+                          chat_template_kwargs:
+                            enable_thinking: false
+                      model_info:
+                        max_input_tokens: 8192
+                        max_output_tokens: 8192
+                        supports_function_calling: true
+
+                    # murderbot-uncensored-v1-base: legacy alias, same rationale as murderbot-v1-base above.
+                    # Prompt-based uncensoring only as of the 2026-08-19 Qwen3.8 migration (see header
+                    # comment above) — not weight-level abliteration like the old Qwen3.6/huihui-ai setup.
+                    # enable_thinking=false: same empty-response regression as murderbot-v1-base above.
+                    - model_name: murderbot-uncensored-v1-base
+                      litellm_params:
+                        model: openai/murderbot-primary
+                        api_base: http://10.100.20.19:8088/v1
+                        api_key: none
+                        timeout: 600
+                        extra_body:
+                          parallel_tool_calls: false
+                          chat_template_kwargs:
+                            enable_thinking: false
+                      model_info:
+                        max_input_tokens: 8192
+                        max_output_tokens: 8192
+                        supports_function_calling: true
+
+                    # murderbot-v2-base: single unified entrypoint for OWU (replaces v1-base + v1-research-base).
+                    # enable_thinking=false: originally left ON here (MTP makes reasoning cheap, answer quality
+                    # was better in ad-hoc testing) — reverted 2026-07-23 after praetor's smoke suite reproduced
+                    # a real regression: with thinking on, ordinary requests with a caller-capped max_tokens
+                    # (e.g. OWU's liveness check, 256 tokens) came back finish_reason=length with EMPTY content
+                    # — the whole budget went to reasoning_content, none left for the visible answer. This is
+                    # exactly the "revisit if real usage shows otherwise" case the original comment called for.
+                    # 40960/8192 = 49152 total: intentionally sized to the SMALLER of the two model
+                    # profiles (qwen38's -c 49152), not necessarily the currently-active one -- qwen36's
+                    # -c 98304 is larger, so this stays a safe (if conservative) budget regardless of
+                    # which profile the gpu-switcher has active. Bump only if a future profile has an
+                    # even smaller context than 49152.
+                    # tools (web search, infra, k8s) are configured in the OWU model preset, not here.
+                    # Both v2-custom (gated) and v2-uncensored-custom (permissive) use this base; behavior
+                    # is controlled entirely by the OWU system prompt, not by model weights.
+                    - model_name: murderbot-v2-base
+                      litellm_params:
+                        model: openai/murderbot-primary
+                        api_base: http://10.100.20.19:8088/v1
+                        api_key: none
+                        timeout: 600
+                        extra_body:
+                          parallel_tool_calls: false
+                          chat_template_kwargs:
+                            enable_thinking: false
+                      model_info:
+                        max_input_tokens: 40960
+                        max_output_tokens: 8192
+                        supports_function_calling: true
+
+                    # --- archlinux (RX 9070 XT, 16GB VRAM, Ollama — qwen3:14b at ~51 t/s) ---
+                    # Base model names use -base suffix so OWU only shows the configured presets
+                    # (archlinux-v0-custom → archlinux-v0, archlinux-uncensored-v0-custom → archlinux-uncensored-v0).
+
+                    - model_name: archlinux-v0-base
+                      litellm_params:
+                        model: ollama/qwen3:14b
+                        api_base: http://10.100.20.25:11434
+                        timeout: 300
+                        extra_body:
+                          think: false
+                          options:
+                            num_ctx: 32768
+                      model_info:
+                        max_input_tokens: 16384
+                        max_output_tokens: 4096
+                        supports_function_calling: true
+
+                    - model_name: archlinux-uncensored-v0-base
+                      litellm_params:
+                        model: ollama/qwen3:14b
+                        api_base: http://10.100.20.25:11434
+                        timeout: 300
+                        extra_body:
+                          think: false
+                          options:
+                            num_ctx: 32768
+                      model_info:
+                        max_input_tokens: 16384
+                        max_output_tokens: 4096
+                        supports_function_calling: true
+
+                    # --- embeddings (nomic-embed-text via mac-mini Ollama for mem0) ---
+                    # mem0 uses this for vector search. Requires nomic-embed-text pulled on mac-mini:
+                    #   curl -X POST http://10.100.20.18:11434/api/pull -d '{"name":"nomic-embed-text"}'
+                    - model_name: nomic-embed-text
+                      litellm_params:
+                        model: ollama/nomic-embed-text
+                        api_base: http://10.100.20.18:11434
+                        api_key: none
+                      model_info:
+                        mode: embedding
+                        max_input_tokens: 8192
+                        output_vector_size: 768
+
+                    # image-gen model_list entry dropped here (2026-09-29 gmktec port): pointed at
+                    # imggen-server.imggen.svc.cluster.local, an in-cluster Service on the dead
+                    # legacy cluster. imggen itself isn't ported/tracked anywhere yet — add this
+                    # entry back once it is, verbatim from k3s-dean-gitops/apps/litellm/server/
+                    # configmap.yaml.
+
+                  router_settings:
+                    routing_strategy: least-busy
+                    num_retries: 3
+                    retry_after: 2
+                    cooldown_time: 30
+                    allowed_fails: 5
+                    retry_policy:
+                      BadRequestErrorRetries: 3
+
+                  # mcp_servers block dropped here (2026-09-29 gmktec port): all 10 entries pointed
+                  # at in-cluster Services on the dead legacy cluster (mcp-searxng, secure-search,
+                  # infra, github, kubernetes-mcp, praetor, grafana-mcp, komodo-mcp, obsidian-mcp,
+                  # bws-mcp — homeassistant was already removed before this outage, stays removed).
+                  # Restored incrementally, one server at a time, via the mcp-servers
+                  # ApplicationSet (k3s/infra/mcp-servers/) as each is ported — see
+                  # instructions/infra2-infra-tier-plan-draft.md Phase D. Each restored entry is
+                  # added back here verbatim from k3s-dean-gitops/apps/litellm/server/configmap.yaml.
+
+                  litellm_settings:
+                    drop_params: true
+                    callbacks:
+                      - prometheus
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: litellm-migration-override
+                namespace: litellm
+              data:
+                prisma_migration.py: |
+                  # Override of /app/litellm/proxy/prisma_migration.py
+                  #
+                  # Startup time breakdown (measured, cold container):
+                  #   - Python imports 3044 modules (litellm.proxy.proxy_server): ~2-7 min
+                  #     (varies with overlay FS page cache warmth; unavoidable without custom image)
+                  #   - subprocess.run(["prisma"]) binary existence check: ~10s (Node.js startup)
+                  #   - prisma migrate deploy: ~17s
+                  #   - uvicorn lifespan: ~8s
+                  #   Total: ~8 minutes observed
+                  #
+                  # The original script called run_server(["--skip_server_startup"]) which
+                  # internally ran `prisma generate` (Node.js), adding ~2 extra minutes.
+                  # This override skips that, running prisma migrate deploy directly.
+
+                  import os
+                  import subprocess
+                  import sys
+
+                  sys.path.insert(0, os.path.abspath("./"))
+
+                  from litellm._logging import verbose_proxy_logger
+
+                  verbose_proxy_logger.info("Running prisma migrate deploy")
+                  result = subprocess.run(
+                      ["prisma", "migrate", "deploy"],
+                      capture_output=True, text=True,
+                      cwd="/app",
+                      timeout=120,  # Fail fast if DB is unreachable (max 2 min vs 10.5 min probe)
+                  )
+                  verbose_proxy_logger.info(f"prisma migrate deploy stdout: {result.stdout}")
+                  if result.returncode != 0:
+                      verbose_proxy_logger.error(
+                          f"prisma migrate deploy failed (exit {result.returncode}): {result.stderr}"
+                      )
+                      sys.exit(result.returncode)
+                  verbose_proxy_logger.info("prisma migrate deploy completed")
+                  verbose_proxy_logger.info("Skipping prisma generate — Prisma client pre-built in image")
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: litellm-owu-refresh-hook
+                namespace: litellm
+              data:
+                # Runs from litellm-server's postStart lifecycle hook every time the pod
+                # (re)starts. OWU only fetches its MCP tool-server connections once, at its
+                # own process startup (open_webui/main.py, "Pre-fetch tool server specs so
+                # the first request doesn't pay the latency cost") — it has no retry or
+                # periodic refresh if the backend it's connected to (this pod) restarts
+                # later. Since litellm runs on k3s and can restart at any time (OOM,
+                # rolling deploy, node eviction), every such restart silently breaks OWU's
+                # tool availability until someone notices and manually restarts OWU too.
+                #
+                # Re-POSTing OWU's tool_servers config (even unchanged) makes OWU re-run
+                # the same connect+list_tools cycle it does at its own startup — this is
+                # the same effect as an OWU restart, without the ~1 min outage or
+                # disrupting any active OWU sessions. Confirmed via OWU v0.9.6 source
+                # (routers/configs.py: POST /tool_servers calls set_tool_servers(request)).
+                refresh_owu_tools.py: |
+                  import json
+                  import os
+                  import sys
+                  import time
+                  import urllib.request
+
+                  OWUI_URL = os.environ.get('OWUI_BASE_URL', 'https://bot.amer.dev')
+                  EMAIL = os.environ['OWUI_ADMIN_EMAIL']
+                  PASSWORD = os.environ['OWUI_ADMIN_PASSWORD']
+
+
+                  def _post(url, data=None, headers=None, method=None):
+                      req = urllib.request.Request(
+                          url,
+                          data=json.dumps(data).encode() if data is not None else None,
+                          headers=headers or {},
+                          method=method,
+                      )
+                      with urllib.request.urlopen(req, timeout=15) as r:
+                          return json.loads(r.read())
+
+
+                  def refresh_once():
+                      token = _post(
+                          f'{OWUI_URL}/api/v1/auths/signin',
+                          data={'email': EMAIL, 'password': PASSWORD},
+                          headers={'Content-Type': 'application/json'},
+                      )['token']
+
+                      req = urllib.request.Request(
+                          f'{OWUI_URL}/api/v1/configs/tool_servers',
+                          headers={'Authorization': f'Bearer {token}'},
+                      )
+                      with urllib.request.urlopen(req, timeout=15) as r:
+                          current_config = json.loads(r.read())
+
+                      _post(
+                          f'{OWUI_URL}/api/v1/configs/tool_servers',
+                          data=current_config,
+                          headers={
+                              'Authorization': f'Bearer {token}',
+                              'Content-Type': 'application/json',
+                          },
+                          method='POST',
+                      )
+
+
+                  def main():
+                      # Give litellm's own /health/readiness a head start, and OWU a moment
+                      # if it happens to be restarting at the same time -- this runs in the
+                      # background (see postStart hook), so it never delays litellm itself
+                      # becoming ready.
+                      delays = [10, 30, 60, 120, 240]
+                      for i, delay in enumerate(delays):
+                          time.sleep(delay)
+                          try:
+                              refresh_once()
+                              print(f'refresh_owu_tools: success on attempt {i + 1}')
+                              return
+                          except Exception as e:  # noqa: BLE001 -- best-effort, log and retry
+                              print(f'refresh_owu_tools: attempt {i + 1} failed: {e}', file=sys.stderr)
+                      print('refresh_owu_tools: all attempts failed, giving up', file=sys.stderr)
+
+
+                  if __name__ == '__main__':
+                      main()
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: litellm-custom-hooks
+                namespace: litellm
+              data:
+                tool_strip_hook.py: |
+                  # No custom hooks. See amerenda/praetor docs/no-bespoke-hooks.md.
+            - apiVersion: external-secrets.io/v1
+              kind: ExternalSecret
+              metadata:
+                name: litellm-secrets
+                namespace: litellm
+              spec:
+                refreshInterval: 1h
+                secretStoreRef:
+                  name: bitwarden-secretsmanager
+                  kind: ClusterSecretStore
+                target:
+                  name: litellm-secrets
+                  creationPolicy: Owner
+                data:
+                  - secretKey: master-key
+                    remoteRef:
+                      key: litellm-master-key
+                      property: password
+                  - secretKey: database-url
+                    remoteRef:
+                      key: litellm-database-url
+                      property: password
+                  # Used only by the postStart owu-refresh-hook (see owu-refresh-hook ConfigMap
+                  # above) to sign in to OWU and re-trigger its tool-server connection refresh
+                  # after this pod restarts.
+                  - secretKey: owui-admin-password
+                    remoteRef:
+                      key: openwebui-dean-admin-password
+                      property: password
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: litellm-server
+                namespace: litellm
+              spec:
+                selector:
+                  app: litellm-server
+                ports:
+                  - name: http
+                    port: 4000
+                    targetPort: 4000
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: litellm-server
+                namespace: litellm
+              spec:
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app: litellm-server
+                strategy:
+                  type: RollingUpdate
+                  rollingUpdate:
+                    maxUnavailable: 0
+                    maxSurge: 1
+                template:
+                  metadata:
+                    labels:
+                      app: litellm-server
+                    annotations:
+                      configmap.reloader.stakater.com/reload: "litellm-config,litellm-custom-hooks,litellm-migration-override,litellm-owu-refresh-hook"
+                  spec:
+                    # Was hard-pinned to murderbot (kubernetes.io/hostname: murderbot) as a
+                    # reactive fix for a flaky archlinux node going NotReady (#974, June
+                    # 2026). No architectural need for this pod to run specifically on
+                    # murderbot -- llama-server (10.100.20.19:8088) and Postgres (mac-mini)
+                    # are both reached over the network regardless of node. That pin meant
+                    # this pod went down for 7+ hours during INC-2026-08-30 (murderbot host
+                    # memory exhaustion) instead of self-healing like everything else did,
+                    # since kubelet had nowhere else to (re)schedule it. Matches the
+                    # arch-only selector already used by imggen/praetor-webhook-adapter for
+                    # the same GPU-adjacent murderbot/archlinux pair.
+                    nodeSelector:
+                      kubernetes.io/arch: amd64
+                    containers:
+                    - name: server
+                      image: ghcr.io/berriai/litellm:main-stable
+                      imagePullPolicy: IfNotPresent
+                      ports:
+                      - containerPort: 4000
+                      env:
+                      - name: LITELLM_MASTER_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: litellm-secrets
+                            key: master-key
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: litellm-secrets
+                            key: database-url
+                      - name: MCP_TOOL_PREFIX_SEPARATOR
+                        value: "_"
+                      - name: LITELLM_LOCAL_MODEL_COST_MAP
+                        value: "true"
+                      - name: OWUI_ADMIN_EMAIL
+                        value: "alex@amer.dev"
+                      - name: OWUI_ADMIN_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: litellm-secrets
+                            key: owui-admin-password
+                      lifecycle:
+                        # OWU only fetches its MCP tool-server connections once, at its own
+                        # startup -- it never notices when this pod (litellm) restarts, and
+                        # silently serves a dead connection until someone manually restarts
+                        # OWU too. This re-triggers OWU's refresh every time this pod
+                        # starts, so a k3s-initiated restart (OOM, rolling deploy, node
+                        # eviction -- all of which are expected/routine here) can no longer
+                        # leave OWU stuck. Runs in the background (backgrounded before this
+                        # hook returns) so a slow or failing OWU can never block or fail
+                        # this pod's own startup.
+                        postStart:
+                          exec:
+                            command:
+                            - /bin/sh
+                            - -c
+                            - nohup python3 /app/hooks/refresh_owu_tools.py > /tmp/owu-refresh-hook.log 2>&1 &
+                      startupProbe:
+                        httpGet:
+                          path: /health/readiness
+                          port: 4000
+                        initialDelaySeconds: 30
+                        periodSeconds: 15
+                        timeoutSeconds: 10
+                        failureThreshold: 40
+                      readinessProbe:
+                        httpGet:
+                          path: /health/readiness
+                          port: 4000
+                        periodSeconds: 10
+                        timeoutSeconds: 10
+                        failureThreshold: 6
+                      livenessProbe:
+                        httpGet:
+                          path: /health/liveliness
+                          port: 4000
+                        periodSeconds: 30
+                        timeoutSeconds: 10
+                        failureThreshold: 5
+                      resources:
+                        requests:
+                          cpu: 100m
+                          memory: 1Gi
+                        limits:
+                          cpu: 1000m
+                          memory: 4Gi
+                      args:
+                      - --config
+                      - /app/config.yaml
+                      - --port
+                      - '4000'
+                      volumeMounts:
+                      - name: litellm-config
+                        mountPath: /app/config.yaml
+                        subPath: config.yaml
+                        readOnly: true
+                      - name: custom-hooks
+                        mountPath: /app/custom_hooks
+                        readOnly: true
+                      - name: migration-override
+                        mountPath: /app/litellm/proxy/prisma_migration.py
+                        subPath: prisma_migration.py
+                        readOnly: true
+                      - name: owu-refresh-hook
+                        mountPath: /app/hooks
+                        readOnly: true
+                    volumes:
+                    - name: litellm-config
+                      configMap:
+                        name: litellm-config
+                    - name: custom-hooks
+                      configMap:
+                        name: litellm-custom-hooks
+                    - name: migration-override
+                      configMap:
+                        name: litellm-migration-override
+                    - name: owu-refresh-hook
+                      configMap:
+                        name: litellm-owu-refresh-hook
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: litellm-ingress
+                namespace: litellm
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: litellm.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+              spec:
+                tls:
+                  - hosts:
+                      - litellm.amer.dev
+                    secretName: litellm-amer-dev-tls
+                rules:
+                  - host: litellm.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: litellm-server
+                              port:
+                                number: 4000
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: litellm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
