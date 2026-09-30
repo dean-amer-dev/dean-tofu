@@ -1136,6 +1136,106 @@ spec:
                         configMap:
                           name: kubernetes-mcp-nginx-proxy
 
+          # Legacy source: k3s-dean-gitops apps/mcp-searxng/server/service.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
+          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
+          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
+          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          - name: mcp-searxng
+            namespace: mcp-searxng
+            valuesYaml: |
+              resources:
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: mcp-searxng-server
+                  namespace: mcp-searxng
+                spec:
+                  selector:
+                    app: mcp-searxng-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: mcp-searxng-server
+                  namespace: mcp-searxng
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: mcp-searxng-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: mcp-searxng-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/mcp-searxng:sha-a38bd82
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: SEARXNG_URL
+                          value: http://searxng.searxng.svc.cluster.local:8080
+                        - name: MAX_RESULTS
+                          value: '5'
+                        - name: MAX_CONTENT_CHARS
+                          value: '600'
+                        - name: MAX_URL_CONTENT_CHARS
+                          value: '4000'
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 128Mi
+                          limits:
+                            cpu: 200m
+                            memory: 384Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: mcp-searxng-ingress
+                  namespace: mcp-searxng
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: mcp-searxng.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - mcp-searxng.amer.dev
+                    secretName: mcp-searxng-amer-dev-tls
+                  rules:
+                  - host: mcp-searxng.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: mcp-searxng-server
+                            port:
+                              number: 8000
+
           # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
           # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
           # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
