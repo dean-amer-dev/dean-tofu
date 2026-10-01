@@ -1,6 +1,11 @@
 variable "app_name" {
   description = "Application name (kebab-case); used for the database, role and BWS secret names"
   type        = string
+
+  validation {
+    condition     = !startswith(replace(var.app_name, "-", "_"), "pg_")
+    error_message = "app_name must not start with pg_/pg- (PostgreSQL reserves role names starting with pg_)."
+  }
 }
 
 variable "app_namespace" {

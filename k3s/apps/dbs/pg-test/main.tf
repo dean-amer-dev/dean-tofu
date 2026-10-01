@@ -42,13 +42,13 @@ resource "kubectl_manifest" "namespace" {
   yaml_body = yamlencode({
     apiVersion = "v1"
     kind       = "Namespace"
-    metadata   = { name = "pg-test" }
+    metadata   = { name = "dbtest" }
   })
 }
 
 module "db" {
   source        = "../../../../modules/app-postgres"
   depends_on    = [kubectl_manifest.namespace]
-  app_name      = "pg-test"
-  app_namespace = "pg-test"
+  app_name      = "dbtest"
+  app_namespace = "dbtest"
 }
