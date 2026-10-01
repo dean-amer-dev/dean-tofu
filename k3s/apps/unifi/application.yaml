@@ -1,0 +1,188 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unifi
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: cilium.io/v2alpha1
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: unifi
+          spec:
+            blocks:
+            - cidr: 10.100.20.190/32
+            serviceSelector:
+              matchLabels:
+                io.kubernetes.service.namespace: unifi
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: unifi-mongodb-password
+            namespace: unifi
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: unifi-mongodb-password
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: password
+              remoteRef:
+                key: unifi-mongodb-password
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: unifi-config
+            namespace: unifi
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: unifi
+            namespace: unifi
+            annotations:
+              lbipam.cilium.io/ips: 10.100.20.190
+              external-dns.alpha.kubernetes.io/hostname: unifi.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+          spec:
+            type: LoadBalancer
+            externalTrafficPolicy: Cluster
+            selector:
+              app: unifi
+            ports:
+            - {name: discovery, port: 10001, protocol: UDP, targetPort: 10001}
+            - {name: stun, port: 3478, protocol: UDP, targetPort: 3478}
+            - {name: syslog, port: 5514, protocol: UDP, targetPort: 5514}
+            - {name: https-portal, port: 8843, protocol: TCP, targetPort: 8843}
+            - {name: ui, port: 8443, protocol: TCP, targetPort: 8443}
+            - {name: http-portal, port: 8880, protocol: TCP, targetPort: 8880}
+            - {name: inform, port: 8080, protocol: TCP, targetPort: 8080}
+            - {name: speedtest, port: 6789, protocol: TCP, targetPort: 6789}
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: unifi
+            namespace: unifi
+            labels:
+              app: unifi
+              infra2.amer.dev/single-replica-exempt: "true"
+            annotations:
+              reloader.stakater.com/auto: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: unifi
+            template:
+              metadata:
+                labels:
+                  app: unifi
+              spec:
+                initContainers:
+                - name: write-db-config
+                  image: busybox:1.37.0
+                  command:
+                  - sh
+                  - -c
+                  - |
+                    set -e
+                    mkdir -p /config/data
+                    H=unifi-mongodb-0.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-1.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-2.unifi-mongodb-svc.mongodb.svc.cluster.local:27017
+                    Q="replicaSet=unifi-mongodb&authSource=admin&tls=false"
+                    {
+                      echo "db.mongo.local=false"
+                      echo "db.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi?${Q}"
+                      echo "statdb.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi_stat?${Q}"
+                      echo "unifi.db.name=unifi"
+                    } > /config/data/system.properties
+                  env:
+                  - name: MONGO_PASS
+                    valueFrom:
+                      secretKeyRef:
+                        name: unifi-mongodb-password
+                        key: password
+                  volumeMounts:
+                  - name: config
+                    mountPath: /config
+                  resources:
+                    requests:
+                      cpu: 10m
+                      memory: 16Mi
+                    limits:
+                      memory: 32Mi
+                containers:
+                - name: unifi
+                  image: lscr.io/linuxserver/unifi-network-application:10.6.106-ls148
+                  env:
+                  - {name: PUID, value: "1000"}
+                  - {name: PGID, value: "1000"}
+                  - {name: TZ, value: Etc/UTC}
+                  - {name: MEM_LIMIT, value: "1024"}
+                  - {name: MEM_STARTUP, value: "1024"}
+                  ports:
+                  - {name: discovery, containerPort: 10001, protocol: UDP}
+                  - {name: stun, containerPort: 3478, protocol: UDP}
+                  - {name: syslog, containerPort: 5514, protocol: UDP}
+                  - {name: https-portal, containerPort: 8843}
+                  - {name: ui, containerPort: 8443}
+                  - {name: http-portal, containerPort: 8880}
+                  - {name: inform, containerPort: 8080}
+                  - {name: speedtest, containerPort: 6789}
+                  volumeMounts:
+                  - name: config
+                    mountPath: /config
+                  startupProbe:
+                    tcpSocket:
+                      port: 8443
+                    periodSeconds: 10
+                    failureThreshold: 60
+                  readinessProbe:
+                    tcpSocket:
+                      port: 8443
+                    periodSeconds: 15
+                  resources:
+                    requests:
+                      cpu: 200m
+                      memory: 1536Mi
+                    limits:
+                      memory: 2Gi
+                volumes:
+                - name: config
+                  persistentVolumeClaim:
+                    claimName: unifi-config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unifi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
