@@ -253,10 +253,6 @@ spec:
                       url: "http://mcp-searxng-server.mcp-searxng.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
-                    secure-search:
-                      url: "http://secure-search-mcp-server.secure-search-mcp.svc.cluster.local:8000/mcp"
-                      transport: "http"
-                      allow_all_keys: true
 
                   litellm_settings:
                     drop_params: true
