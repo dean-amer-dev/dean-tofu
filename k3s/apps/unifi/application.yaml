@@ -18,7 +18,7 @@ spec:
             name: unifi
           spec:
             blocks:
-            - cidr: 10.100.20.190/32
+            - cidr: 10.100.20.204/32
             serviceSelector:
               matchLabels:
                 io.kubernetes.service.namespace: unifi
@@ -59,7 +59,7 @@ spec:
             name: unifi
             namespace: unifi
             annotations:
-              lbipam.cilium.io/ips: 10.100.20.190
+              lbipam.cilium.io/ips: 10.100.20.204
               external-dns.alpha.kubernetes.io/hostname: unifi.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
           spec:
