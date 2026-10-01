@@ -1281,6 +1281,8 @@ spec:
                           value: :8001
                         - name: FIREWALL_OUTBOUND_SUBNETS
                           value: 10.44.0.0/16,10.45.0.0/16
+                        - name: FIREWALL_INPUT_PORTS
+                          value: "8000,8001"
                         - name: BLOCK_MALICIOUS
                           value: "off"
                         - name: TZ
