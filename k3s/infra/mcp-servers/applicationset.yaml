@@ -1240,6 +1240,9 @@ spec:
           # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
           # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
           # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
+          # gmktec tweak: gluetun env BLOCK_MALICIOUS=off + HEALTH_VPN_DURATION_INITIAL=30s. Its initial 6s health
+          # check raced the DoT resolver warm-up plus the blocklist download (needs DNS through the tunnel itself),
+          # so the VPN restarted in a loop although the tunnel was fine (ping/TCP/DoT all ok when probed live).
           - name: secure-search-mcp
             namespace: secure-search-mcp
             valuesYaml: |
@@ -1332,10 +1335,7 @@ spec:
                           value: :8001
                         - name: FIREWALL_OUTBOUND_SUBNETS
                           value: 10.44.0.0/16,10.45.0.0/16
-                        # gmktec: gluetun's initial health check (6s) races its own DoT resolver warm-up plus the
-                      # malicious-hostname blocklist download (which itself needs DNS through the tunnel),
-                      # so the VPN restarted in a loop even though the tunnel was fine (ping/TCP/DoT ok).
-                      - name: BLOCK_MALICIOUS
+                        - name: BLOCK_MALICIOUS
                         value: "off"
                       - name: HEALTH_VPN_DURATION_INITIAL
                         value: 30s
