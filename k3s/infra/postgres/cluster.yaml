@@ -133,7 +133,9 @@ spec:
                       - name: RCLONE_CONFIG_GCS_TYPE
                         value: s3
                       - name: RCLONE_CONFIG_GCS_PROVIDER
-                        value: Other
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
                       - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
                         valueFrom:
                           secretKeyRef: {name: pg-backup-gcs, key: access-key}
