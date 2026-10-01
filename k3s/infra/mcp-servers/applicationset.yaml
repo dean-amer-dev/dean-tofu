@@ -1283,8 +1283,6 @@ spec:
                           value: 10.44.0.0/16,10.45.0.0/16
                         - name: BLOCK_MALICIOUS
                           value: "off"
-                        - name: DNS_UPSTREAM_RESOLVER_TYPE
-                          value: plain
                         - name: TZ
                           value: UTC
                         - name: LOG_LEVEL
