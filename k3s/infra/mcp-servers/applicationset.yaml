@@ -4,30 +4,9 @@ metadata:
   name: mcp-servers
   namespace: argocd
 spec:
-  # One ApplicationSet for all 9 MCP servers dropped from litellm's mcp_servers block when it was
-  # ported off the (now permanently dead) legacy k3s control plane - see
-  # instructions/infra2-infra-tier-plan-draft.md Phase D /
-  # instructions/infra2-infra-tier-background-draft.md for the full decision log. Same List
-  # generator + Go-template mechanism as k3s/app-of-apps/applicationset.yaml, adapted for
-  # hand-rolled manifests: every element points at the same bedag/raw chart (rather than each
-  # element's own upstream chart, as in the app-of-apps tier) and carries its own `resources:`
-  # list (Deployment/Service/ExternalSecret/Ingress as needed) inlined into valuesYaml.
-  #
-  # Deployed one server at a time, not all 9 at once: add the next element to this list, commit,
-  # `tofu apply`, verify that one server end-to-end (through litellm's mcp_servers block AND
-  # directly, where it has its own ingress) before adding the next. obsidian-mcp goes first - see
-  # the background note's priority order.
   generators:
     - list:
         elements:
-          # Legacy source: k3s-dean-gitops/apps/mcp/obsidian/ (deployment.yaml, service.yaml,
-          # externalsecret.yaml, ingress.yaml). Only change from legacy: externalsecret.yaml's
-          # secretStoreRef.name fixed bitwarden-secretstore -> bitwarden-secretsmanager (the
-          # actual live ClusterSecretStore on gmktec - same fix as litellm's), ingress.yaml's
-          # Traefik-specific annotations + ingressClassName dropped (Cilium is cluster-default).
-          # letsencrypt-prod kept as-is per Alex's 2026-09-29 call (cert-manager's issuance path
-          # is verified, new gmktec ingresses go straight to prod). Depends on couchdb.amer.dev
-          # (already live via external-ingress-private, Phase B) - no new dependency to stand up.
           - name: obsidian-mcp
             namespace: mcp-obsidian
             valuesYaml: |
@@ -155,10 +134,1241 @@ spec:
                                   port:
                                     number: 8787
 
-          # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
-          # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
-          # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
-          # same shape as obsidian-mcp above, once the previous one is verified working.
+          - name: bws-mcp
+            namespace: bws-mcp
+            valuesYaml: |
+              resources:
+                - apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: bws-mcp-token
+                    namespace: bws-mcp
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: bitwarden-secretsmanager
+                      kind: ClusterSecretStore
+                    target:
+                      name: bws-mcp-token
+                      creationPolicy: Owner
+                      deletionPolicy: Retain
+                    data:
+                      - secretKey: token
+                        remoteRef:
+                          key: infra-mcp-bws-token
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                - apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: bws-mcp-server
+                    namespace: bws-mcp
+                  spec:
+                    selector:
+                      app: bws-mcp-server
+                    ports:
+                      - name: http
+                        port: 8000
+                        targetPort: 8000
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: bws-mcp-server
+                    namespace: bws-mcp
+                    annotations:
+                      reloader.stakater.com/auto: "true"
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: bws-mcp-server
+                    strategy:
+                      type: RollingUpdate
+                      rollingUpdate:
+                        maxUnavailable: 0
+                        maxSurge: 1
+                    template:
+                      metadata:
+                        labels:
+                          app: bws-mcp-server
+                      spec:
+                        containers:
+                          - name: server
+                            image: amerenda/bws-mcp:sha-a38bd82
+                            imagePullPolicy: Always
+                            ports:
+                              - containerPort: 8000
+                            env:
+                              - name: BWS_ACCESS_TOKEN
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: bws-mcp-token
+                                    key: token
+                              - name: BWS_PROJECT_ID
+                                value: "6353f589-39c0-45f2-9e9c-b36f00e0c282"
+                            readinessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 5
+                              periodSeconds: 10
+                            livenessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 10
+                              periodSeconds: 30
+                            resources:
+                              requests:
+                                cpu: 50m
+                                memory: 64Mi
+                              limits:
+                                cpu: 200m
+                                memory: 128Mi
+
+          - name: infra-mcp
+            namespace: infra-mcp
+            valuesYaml: |
+              resources:
+                - apiVersion: external-secrets.io/v1
+                  kind: ExternalSecret
+                  metadata:
+                    name: infra-mcp-secrets
+                    namespace: infra-mcp
+                  spec:
+                    refreshInterval: 1h
+                    secretStoreRef:
+                      name: bitwarden-secretsmanager
+                      kind: ClusterSecretStore
+                    target:
+                      name: infra-mcp-secrets
+                      creationPolicy: Owner
+                      deletionPolicy: Retain
+                    data:
+                      - secretKey: bws-access-token
+                        remoteRef:
+                          key: infra-mcp-bws-token
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-app-id
+                        remoteRef:
+                          key: github-amerenda-coder-app-id
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-installation-id
+                        remoteRef:
+                          key: github-amerenda-coder-installation-id
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                      - secretKey: coder-private-key
+                        remoteRef:
+                          key: github-amerenda-coder-private-key
+                          conversionStrategy: Default
+                          decodingStrategy: None
+                          metadataPolicy: None
+                - apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: infra-mcp-server
+                    namespace: infra-mcp
+                  spec:
+                    selector:
+                      app: infra-mcp-server
+                    ports:
+                      - name: http
+                        port: 8000
+                        targetPort: 8000
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRole
+                  metadata:
+                    name: infra-mcp-observer
+                  rules:
+                    - apiGroups: ["argoproj.io"]
+                      resources: ["applications"]
+                      verbs: ["get", "list"]
+                    - apiGroups: [""]
+                      resources: ["pods"]
+                      verbs: ["get", "list"]
+                    - apiGroups: ["apps"]
+                      resources: ["deployments"]
+                      verbs: ["get", "list"]
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: ClusterRoleBinding
+                  metadata:
+                    name: infra-mcp-observer
+                  subjects:
+                    - kind: ServiceAccount
+                      name: default
+                      namespace: infra-mcp
+                  roleRef:
+                    kind: ClusterRole
+                    name: infra-mcp-observer
+                    apiGroup: rbac.authorization.k8s.io
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: Role
+                  metadata:
+                    name: tofu-state
+                    namespace: infra-mcp
+                  rules:
+                    - apiGroups: [""]
+                      resources: ["secrets"]
+                      verbs: ["create", "get", "list", "update", "patch", "delete"]
+                    - apiGroups: ["coordination.k8s.io"]
+                      resources: ["leases"]
+                      verbs: ["create", "get", "list", "update", "patch", "delete"]
+                - apiVersion: rbac.authorization.k8s.io/v1
+                  kind: RoleBinding
+                  metadata:
+                    name: tofu-state
+                    namespace: infra-mcp
+                  subjects:
+                    - kind: ServiceAccount
+                      name: default
+                      namespace: infra-mcp
+                  roleRef:
+                    kind: Role
+                    name: tofu-state
+                    apiGroup: rbac.authorization.k8s.io
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: infra-mcp-server
+                    namespace: infra-mcp
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: infra-mcp-server
+                    strategy:
+                      type: RollingUpdate
+                      rollingUpdate:
+                        maxUnavailable: 0
+                        maxSurge: 1
+                    template:
+                      metadata:
+                        annotations:
+                          reloader.stakater.com/auto: "true"
+                        labels:
+                          app: infra-mcp-server
+                      spec:
+                        containers:
+                          - name: server
+                            image: amerenda/infra-mcp:sha-a38bd82
+                            imagePullPolicy: Always
+                            ports:
+                              - containerPort: 8000
+                            env:
+                              - name: BWS_ACCESS_TOKEN
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: bws-access-token
+                              - name: CODER_APP_ID
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-app-id
+                              - name: CODER_INSTALLATION_ID
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-installation-id
+                              - name: CODER_APP_PRIVATE_KEY
+                                valueFrom:
+                                  secretKeyRef:
+                                    name: infra-mcp-secrets
+                                    key: coder-private-key
+                              - name: CLONE_REPOS
+                                value: "true"
+                            readinessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 5
+                              periodSeconds: 10
+                            livenessProbe:
+                              httpGet:
+                                path: /health
+                                port: 8000
+                              initialDelaySeconds: 10
+                              periodSeconds: 30
+                            resources:
+                              requests:
+                                cpu: 100m
+                                memory: 256Mi
+                              limits:
+                                cpu: 500m
+                                memory: 512Mi
+                - apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: infra-mcp-ingress
+                    namespace: infra-mcp
+                    annotations:
+                      cert-manager.io/cluster-issuer: letsencrypt-prod
+                      external-dns.alpha.kubernetes.io/hostname: infra-mcp.amer.dev
+                      external-dns.alpha.kubernetes.io/ttl: "300"
+                  spec:
+                    tls:
+                      - hosts:
+                          - infra-mcp.amer.dev
+                        secretName: infra-mcp-amer-dev-tls
+                    rules:
+                      - host: infra-mcp.amer.dev
+                        http:
+                          paths:
+                            - path: /
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: infra-mcp-server
+                                  port:
+                                    number: 8000
+
+          - name: github-mcp
+            namespace: github-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: github-mcp-secrets
+                  namespace: github-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: github-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: GITHUB_APP_ID
+                    remoteRef:
+                      key: github-amerenda-coder-app-id
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: GITHUB_APP_PRIVATE_KEY
+                    remoteRef:
+                      key: github-amerenda-coder-private-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: GITHUB_APP_INSTALLATION_ID
+                    remoteRef:
+                      key: github-amerenda-coder-installation-id
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: github-mcp-server
+                  namespace: github-mcp
+                spec:
+                  selector:
+                    app: github-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: github-mcp-server
+                  namespace: github-mcp
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: github-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      annotations:
+                        reloader.stakater.com/auto: 'true'
+                      labels:
+                        app: github-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/github-mcp:sha-a38bd82
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        envFrom:
+                        - secretRef:
+                            name: github-mcp-secrets
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: github-mcp-ingress
+                  namespace: github-mcp
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: github-mcp.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - github-mcp.amer.dev
+                    secretName: github-mcp-amer-dev-tls
+                  rules:
+                  - host: github-mcp.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: github-mcp-server
+                            port:
+                              number: 8000
+
+          - name: praetor-mcp
+            namespace: praetor-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: praetor-mcp-secrets
+                  namespace: praetor-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: praetor-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: PRAETOR_API_KEY
+                    remoteRef:
+                      key: praetor-api-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: praetor-mcp-server
+                  namespace: praetor-mcp
+                spec:
+                  selector:
+                    app: praetor-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: praetor-mcp-server
+                  namespace: praetor-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: praetor-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: praetor-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/praetor-mcp:sha-8076367
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: PRAETOR_BASE_URL
+                          value: https://praetor.amer.dev
+                        - name: PRAETOR_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: praetor-mcp-secrets
+                              key: PRAETOR_API_KEY
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: praetor-mcp-ingress
+                  namespace: praetor-mcp
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: praetor-mcp.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - praetor-mcp.amer.dev
+                    secretName: praetor-mcp-amer-dev-tls
+                  rules:
+                  - host: praetor-mcp.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: praetor-mcp-server
+                            port:
+                              number: 8000
+
+          - name: grafana-mcp
+            namespace: mcp-grafana-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: grafana-mcp-secrets
+                  namespace: mcp-grafana-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: grafana-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: grafana_api_key
+                    remoteRef:
+                      key: grafana-sa-mcp-user-token
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: grafana-mcp-server
+                  namespace: mcp-grafana-mcp
+                spec:
+                  selector:
+                    app: grafana-mcp-server
+                  ports:
+                  - port: 8000
+                    targetPort: 8000
+                    protocol: TCP
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: grafana-mcp-server
+                  namespace: mcp-grafana-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: grafana-mcp-server
+                  template:
+                    metadata:
+                      labels:
+                        app: grafana-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: grafana/mcp-grafana:latest
+                        imagePullPolicy: Always
+                        args:
+                        - -t
+                        - streamable-http
+                        - -address
+                        - 0.0.0.0:8000
+                        - -allowed-hosts
+                        - '*'
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: GRAFANA_URL
+                          value: https://grafana.amer.dev
+                        - name: GRAFANA_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: grafana-mcp-secrets
+                              key: grafana_api_key
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 100m
+                            memory: 128Mi
+
+          - name: komodo-mcp
+            namespace: mcp-komodo-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: komodo-mcp-secrets
+                  namespace: mcp-komodo-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: komodo-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: komodo_api_key
+                    remoteRef:
+                      key: komodo-dean-api-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: komodo_api_secret
+                    remoteRef:
+                      key: komodo-dean-api-secret
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: komodo-mcp-server
+                  namespace: mcp-komodo-mcp
+                spec:
+                  selector:
+                    app: komodo-mcp-server
+                  ports:
+                  - port: 8000
+                    targetPort: 8000
+                    protocol: TCP
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: komodo-mcp-server
+                  namespace: mcp-komodo-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: komodo-mcp-server
+                  template:
+                    metadata:
+                      labels:
+                        app: komodo-mcp-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/komodo-mcp:sha-e76f0be
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: KOMODO_BASE
+                          value: https://komodo.amer.dev
+                        - name: KOMODO_API_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: komodo-mcp-secrets
+                              key: komodo_api_key
+                        - name: KOMODO_API_SECRET
+                          valueFrom:
+                            secretKeyRef:
+                              name: komodo-mcp-secrets
+                              key: komodo_api_secret
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 64Mi
+                          limits:
+                            cpu: 100m
+                            memory: 128Mi
+
+          - name: kubernetes-mcp
+            namespace: mcp-kubernetes-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: v1
+                kind: ServiceAccount
+                metadata:
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRole
+                metadata:
+                  name: kubernetes-mcp-extra-view
+                rules:
+                - apiGroups:
+                  - ''
+                  resources:
+                  - nodes
+                  - persistentvolumes
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - argoproj.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - traefik.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - monitoring.coreos.com
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - longhorn.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - metallb.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - cert-manager.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - external-secrets.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - keda.sh
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - actions.github.com
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - cilium.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: kubernetes-mcp-extra-view-binding
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: kubernetes-mcp-extra-view
+                subjects:
+                - kind: ServiceAccount
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: kubernetes-mcp-view-binding
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: view
+                subjects:
+                - kind: ServiceAccount
+                  name: kubernetes-mcp-sa
+                  namespace: mcp-kubernetes-mcp
+              - apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: kubernetes-mcp-nginx-proxy
+                  namespace: mcp-kubernetes-mcp
+                data:
+                  default.conf: "server {\n  listen 8080;\n  location / {\n    # Rewrite Host header to \"localhost\" so the MCP server accepts the request.\n    # Without this, the FQDN from cluster DNS causes host validation failure.\n    proxy_pass http://127.0.0.1:3000;\n    proxy_set_header Host localhost;\n\n    # HTTP/1.1 + empty Connection header = keep-alive to upstream\n    proxy_http_version 1.1;\n    proxy_set_header Connection \"\";\n\n    # Accommodate long-running kubernetes tool calls (list/watch, logs)\n    proxy_read_timeout 300s;\n  }\n}\n"
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: kubernetes-mcp-server
+                  namespace: mcp-kubernetes-mcp
+                spec:
+                  selector:
+                    app: kubernetes-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8080
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: kubernetes-mcp-server
+                  namespace: mcp-kubernetes-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: kubernetes-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: kubernetes-mcp-server
+                    spec:
+                      serviceAccountName: kubernetes-mcp-sa
+                      containers:
+                      - name: server
+                        image: flux159/mcp-server-kubernetes@sha256:7aa82daa1f10f4305dd8b47fc0351250c342066edc52a68254bb50a84ec067a1
+                        imagePullPolicy: IfNotPresent
+                        ports:
+                        - containerPort: 3000
+                        env:
+                        - name: HOST
+                          value: 0.0.0.0
+                        - name: ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT
+                          value: 'true'
+                        - name: ALLOW_ONLY_READONLY_TOOLS
+                          value: 'true'
+                        readinessProbe:
+                          exec:
+                            command:
+                            - sh
+                            - -c
+                            - curl -s -o /dev/null -m 5 http://localhost:3000/mcp
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                          timeoutSeconds: 8
+                          failureThreshold: 3
+                        livenessProbe:
+                          exec:
+                            command:
+                            - sh
+                            - -c
+                            - curl -s -o /dev/null -m 5 http://localhost:3000/mcp
+                          initialDelaySeconds: 15
+                          periodSeconds: 20
+                          timeoutSeconds: 8
+                          failureThreshold: 6
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 96Mi
+                          limits:
+                            cpu: 300m
+                            memory: 256Mi
+                      - name: host-proxy
+                        image: nginx:alpine
+                        ports:
+                        - containerPort: 8080
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8080
+                          initialDelaySeconds: 2
+                          periodSeconds: 5
+                        volumeMounts:
+                        - name: nginx-conf
+                          mountPath: /etc/nginx/conf.d
+                          readOnly: true
+                        resources:
+                          requests:
+                            cpu: 5m
+                            memory: 16Mi
+                          limits:
+                            cpu: 50m
+                            memory: 32Mi
+                      volumes:
+                      - name: nginx-conf
+                        configMap:
+                          name: kubernetes-mcp-nginx-proxy
+
+          - name: mcp-searxng
+            namespace: mcp-searxng
+            valuesYaml: |
+              resources:
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: mcp-searxng-server
+                  namespace: mcp-searxng
+                spec:
+                  selector:
+                    app: mcp-searxng-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: mcp-searxng-server
+                  namespace: mcp-searxng
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: mcp-searxng-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: mcp-searxng-server
+                    spec:
+                      containers:
+                      - name: server
+                        image: amerenda/mcp-searxng:sha-a38bd82
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                        env:
+                        - name: SEARXNG_URL
+                          value: http://searxng.searxng.svc.cluster.local:8080
+                        - name: MAX_RESULTS
+                          value: '5'
+                        - name: MAX_CONTENT_CHARS
+                          value: '600'
+                        - name: MAX_URL_CONTENT_CHARS
+                          value: '4000'
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 5
+                          periodSeconds: 10
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 30
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 128Mi
+                          limits:
+                            cpu: 200m
+                            memory: 384Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: mcp-searxng-ingress
+                  namespace: mcp-searxng
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: mcp-searxng.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - mcp-searxng.amer.dev
+                    secretName: mcp-searxng-amer-dev-tls
+                  rules:
+                  - host: mcp-searxng.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: mcp-searxng-server
+                            port:
+                              number: 8000
+
+          - name: secure-search-mcp
+            namespace: secure-search-mcp
+            valuesYaml: |
+              resources:
+              - apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: secure-search-mcp-secrets
+                  namespace: secure-search-mcp
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: bitwarden-secretsmanager
+                    kind: ClusterSecretStore
+                  target:
+                    name: secure-search-mcp-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                  - secretKey: NORDVPN_ACCESS_TOKEN
+                    remoteRef:
+                      key: nordvpn-access-token
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+                  - secretKey: NORDVPN_WIREGUARD_PRIVATE_KEY
+                    remoteRef:
+                      key: nordvpn-wireguard-private-key
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+              - apiVersion: v1
+                kind: Service
+                metadata:
+                  name: secure-search-mcp-server
+                  namespace: secure-search-mcp
+                spec:
+                  selector:
+                    app: secure-search-mcp-server
+                  ports:
+                  - name: http
+                    port: 8000
+                    targetPort: 8000
+              - apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: secure-search-mcp-server
+                  namespace: secure-search-mcp
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: secure-search-mcp-server
+                  strategy:
+                    type: RollingUpdate
+                    rollingUpdate:
+                      maxUnavailable: 0
+                      maxSurge: 1
+                  template:
+                    metadata:
+                      labels:
+                        app: secure-search-mcp-server
+                    spec:
+                      dnsPolicy: "None"
+                      dnsConfig:
+                        nameservers:
+                          - 127.0.0.1
+                        options:
+                          - name: ndots
+                            value: "1"
+                      containers:
+                      - name: gluetun
+                        image: ghcr.io/qdm12/gluetun:latest
+                        imagePullPolicy: Always
+                        securityContext:
+                          privileged: true
+                        env:
+                        - name: VPN_SERVICE_PROVIDER
+                          value: nordvpn
+                        - name: VPN_TYPE
+                          value: wireguard
+                        - name: NORDVPN_ACCESS_TOKEN
+                          valueFrom:
+                            secretKeyRef:
+                              name: secure-search-mcp-secrets
+                              key: NORDVPN_ACCESS_TOKEN
+                        - name: WIREGUARD_PRIVATE_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: secure-search-mcp-secrets
+                              key: NORDVPN_WIREGUARD_PRIVATE_KEY
+                        - name: SERVER_COUNTRIES
+                          value: Switzerland
+                        - name: HTTP_CONTROL_SERVER_ADDRESS
+                          value: :8001
+                        - name: FIREWALL_OUTBOUND_SUBNETS
+                          value: 10.44.0.0/16,10.45.0.0/16
+                        - name: FIREWALL_INPUT_PORTS
+                          value: "8000,8001"
+                        - name: BLOCK_MALICIOUS
+                          value: "off"
+                        - name: TZ
+                          value: UTC
+                        - name: LOG_LEVEL
+                          value: info
+                        ports:
+                        - containerPort: 8001
+                          name: vpn-ctrl
+                        livenessProbe:
+                          tcpSocket:
+                            port: 8001
+                          initialDelaySeconds: 15
+                          periodSeconds: 30
+                          timeoutSeconds: 5
+                          failureThreshold: 3
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+                      - name: server
+                        image: amerenda/secure-search-mcp:sha-c323698
+                        imagePullPolicy: Always
+                        ports:
+                        - containerPort: 8000
+                          name: mcp
+                        env:
+                        - name: VPN_INTERFACE
+                          value: tun0
+                        - name: SEARXNG_URL
+                          value: http://10.45.49.242:8080
+                        - name: MAX_RESULTS
+                          value: '5'
+                        - name: MAX_CONTENT_CHARS
+                          value: '600'
+                        - name: MAX_URL_CONTENT_CHARS
+                          value: '4000'
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 10
+                          periodSeconds: 10
+                          timeoutSeconds: 5
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8000
+                          initialDelaySeconds: 15
+                          periodSeconds: 30
+                          timeoutSeconds: 5
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 128Mi
+                          limits:
+                            cpu: 200m
+                            memory: 384Mi
+              - apiVersion: networking.k8s.io/v1
+                kind: Ingress
+                metadata:
+                  name: secure-search-mcp-ingress
+                  namespace: secure-search-mcp
+                  annotations:
+                    cert-manager.io/cluster-issuer: letsencrypt-prod
+                    external-dns.alpha.kubernetes.io/hostname: secure-search-mcp.amer.dev
+                    external-dns.alpha.kubernetes.io/ttl: '300'
+                spec:
+                  tls:
+                  - hosts:
+                    - secure-search-mcp.amer.dev
+                    secretName: secure-search-mcp-amer-dev-tls
+                  rules:
+                  - host: secure-search-mcp.amer.dev
+                    http:
+                      paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: secure-search-mcp-server
+                            port:
+                              number: 8000
 
   template:
     metadata:

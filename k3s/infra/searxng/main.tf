@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/litellm"
+    prefix = "k3s/infra/searxng"
   }
 }
 
@@ -28,3 +28,4 @@ variable "kubeconfig_path" {
 resource "kubectl_manifest" "application" {
   yaml_body = file("${path.module}/application.yaml")
 }
+

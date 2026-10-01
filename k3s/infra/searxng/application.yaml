@@ -1,0 +1,166 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: searxng
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+          - apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: searxng-secrets
+              namespace: searxng
+            spec:
+              refreshInterval: 1h
+              secretStoreRef:
+                name: bitwarden-secretsmanager
+                kind: ClusterSecretStore
+              target:
+                name: searxng-secrets
+                creationPolicy: Owner
+                deletionPolicy: Retain
+              data:
+              - secretKey: secret_key
+                remoteRef:
+                  key: searxng-secret-key
+                  conversionStrategy: Default
+                  decodingStrategy: None
+                  metadataPolicy: None
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: searxng-config
+              namespace: searxng
+            data:
+              settings.yml: "use_default_settings: true\n\ngeneral:\n  instance_name: \"Dean Search\"\n  enable_metrics: false\n\nsearch:\n  safe_search: 1\n  default_lang: \"en\"\n  formats:\n    - html\n    - json\n\n  # These are the defaults \u2014 override per-query via MCP engines param when needed.\n  # Keep google+bing for general, stackoverflow+github for code, reddit for community discussions.\n\nserver:\n  port: 8080\n  bind_address: \"0.0.0.0\"\n  limiter: false\n\nui:\n  static_use_hash: true\n\nengines:\n  - name: google\n    engine: google\n    shortcut: g\n    disabled: false\n  - name: bing\n    engine: bing\n    shortcut: b\n    disabled: false\n  - name: duckduckgo\n    engine: duckduckgo\n    shortcut: ddg\n    disabled: false\n  - name: wikipedia\n    engine: wikipedia\n    shortcut: wp\n    disabled: true\n  - name: github\n    engine: github\n    shortcut: gh\n    disabled: false\n  - name: arxiv\n    engine: arxiv\n    shortcut: ax\n    disabled: true\n  - name: stackoverflow\n\
+                \    engine: stackoverflow\n    shortcut: so\n    disabled: false\n  - name: reddit\n    engine: reddit\n    shortcut: r\n    disabled: true\n"
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: searxng
+              namespace: searxng
+              labels:
+                app: searxng
+            spec:
+              clusterIP: 10.45.49.242
+              type: ClusterIP
+              selector:
+                app: searxng
+              ports:
+              - name: http
+                port: 8080
+                targetPort: 8080
+          - apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: searxng
+              namespace: searxng
+              labels:
+                app: searxng
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  app: searxng
+              template:
+                metadata:
+                  labels:
+                    app: searxng
+                  annotations:
+                    reloader.stakater.com/auto: 'true'
+                spec:
+                  initContainers:
+                  - name: copy-config
+                    image: busybox:1.37.0
+                    command:
+                    - sh
+                    - -c
+                    - cp /cfg/settings.yml /etc/searxng/settings.yml && chown 977:977 /etc/searxng/settings.yml
+                    volumeMounts:
+                    - name: searxng-data
+                      mountPath: /etc/searxng
+                    - name: config-source
+                      mountPath: /cfg
+                  containers:
+                  - name: searxng
+                    image: searxng/searxng:2026.5.31-7159b8aed
+                    ports:
+                    - containerPort: 8080
+                    env:
+                    - name: SEARXNG_BASE_URL
+                      value: https://searxng.amer.dev
+                    - name: SEARXNG_PORT
+                      value: ''
+                    - name: SEARXNG_SECRET
+                      valueFrom:
+                        secretKeyRef:
+                          name: searxng-secrets
+                          key: secret_key
+                    volumeMounts:
+                    - name: searxng-data
+                      mountPath: /etc/searxng
+                    resources:
+                      requests:
+                        cpu: 50m
+                        memory: 256Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8080
+                      initialDelaySeconds: 15
+                    readinessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8080
+                      initialDelaySeconds: 10
+                  volumes:
+                  - name: searxng-data
+                    emptyDir: {}
+                  - name: config-source
+                    configMap:
+                      name: searxng-config
+          - apiVersion: networking.k8s.io/v1
+            kind: Ingress
+            metadata:
+              name: searxng-ingress
+              namespace: searxng
+              annotations:
+                cert-manager.io/cluster-issuer: letsencrypt-prod
+                external-dns.alpha.kubernetes.io/hostname: searxng.amer.dev
+                external-dns.alpha.kubernetes.io/ttl: '300'
+            spec:
+              tls:
+              - hosts:
+                - searxng.amer.dev
+                secretName: searxng-amer-dev-tls
+              rules:
+              - host: searxng.amer.dev
+                http:
+                  paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: searxng
+                        port:
+                          number: 8080
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: searxng
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
