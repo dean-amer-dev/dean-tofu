@@ -43,6 +43,18 @@ spec:
                 conversionStrategy: Default
                 decodingStrategy: None
                 metadataPolicy: None
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: unifi-amer-dev
+            namespace: unifi
+          spec:
+            secretName: unifi-amer-dev-tls
+            issuerRef:
+              name: letsencrypt-prod
+              kind: ClusterIssuer
+            dnsNames:
+            - unifi.amer.dev
         - apiVersion: v1
           kind: PersistentVolumeClaim
           metadata:
@@ -73,6 +85,7 @@ spec:
             - {name: syslog, port: 5514, protocol: UDP, targetPort: 5514}
             - {name: https-portal, port: 8843, protocol: TCP, targetPort: 8843}
             - {name: ui, port: 8443, protocol: TCP, targetPort: 8443}
+            - {name: https, port: 443, protocol: TCP, targetPort: 8443}
             - {name: http-portal, port: 8880, protocol: TCP, targetPort: 8880}
             - {name: inform, port: 8080, protocol: TCP, targetPort: 8080}
             - {name: speedtest, port: 6789, protocol: TCP, targetPort: 6789}
@@ -130,6 +143,29 @@ spec:
                       memory: 16Mi
                     limits:
                       memory: 32Mi
+                - name: write-keystore
+                  image: lscr.io/linuxserver/unifi-network-application:10.6.106-ls148
+                  command:
+                  - sh
+                  - -c
+                  - |
+                    set -e
+                    mkdir -p /config/data
+                    openssl pkcs12 -export -in /tls/tls.crt -inkey /tls/tls.key -name unifi -out /tmp/unifi.p12 -passout pass:aircontrolenterprise
+                    rm -f /config/data/keystore
+                    keytool -importkeystore -srckeystore /tmp/unifi.p12 -srcstoretype PKCS12 -srcstorepass aircontrolenterprise -destkeystore /config/data/keystore -deststorepass aircontrolenterprise -noprompt
+                  volumeMounts:
+                  - name: config
+                    mountPath: /config
+                  - name: tls
+                    mountPath: /tls
+                    readOnly: true
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 128Mi
+                    limits:
+                      memory: 256Mi
                 containers:
                 - name: unifi
                   image: lscr.io/linuxserver/unifi-network-application:10.6.106-ls148
@@ -170,6 +206,9 @@ spec:
                 - name: config
                   persistentVolumeClaim:
                     claimName: unifi-config
+                - name: tls
+                  secret:
+                    secretName: unifi-amer-dev-tls
   destination:
     server: https://kubernetes.default.svc
     namespace: unifi
