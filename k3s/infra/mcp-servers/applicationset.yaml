@@ -1336,10 +1336,10 @@ spec:
                         - name: FIREWALL_OUTBOUND_SUBNETS
                           value: 10.44.0.0/16,10.45.0.0/16
                         - name: BLOCK_MALICIOUS
-                        value: "off"
-                      - name: HEALTH_VPN_DURATION_INITIAL
-                        value: 30s
-                      - name: TZ
+                          value: "off"
+                        - name: HEALTH_VPN_DURATION_INITIAL
+                          value: 30s
+                        - name: TZ
                           value: UTC
                         - name: LOG_LEVEL
                           value: info
