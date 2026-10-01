@@ -122,12 +122,16 @@ spec:
                     mkdir -p /config/data
                     H=unifi-mongodb-0.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-1.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-2.unifi-mongodb-svc.mongodb.svc.cluster.local:27017
                     Q="replicaSet=unifi-mongodb&authSource=admin&tls=false"
+                    F=/config/data/system.properties
+                    touch "$F"
+                    grep -vE '^(db\.mongo\.local|db\.mongo\.uri|statdb\.mongo\.uri|unifi\.db\.name)=' "$F" > /tmp/sp || true
                     {
+                      cat /tmp/sp
                       echo "db.mongo.local=false"
                       echo "db.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi?${Q}"
                       echo "statdb.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi_stat?${Q}"
                       echo "unifi.db.name=unifi"
-                    } > /config/data/system.properties
+                    } > "$F"
                   env:
                   - name: MONGO_PASS
                     valueFrom:
