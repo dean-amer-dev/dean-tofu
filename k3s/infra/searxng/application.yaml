@@ -49,6 +49,7 @@ spec:
               labels:
                 app: searxng
             spec:
+              clusterIP: 10.45.49.242
               type: ClusterIP
               selector:
                 app: searxng

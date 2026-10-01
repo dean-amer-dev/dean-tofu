@@ -1247,6 +1247,13 @@ spec:
                       labels:
                         app: secure-search-mcp-server
                     spec:
+                      dnsPolicy: "None"
+                      dnsConfig:
+                        nameservers:
+                          - 127.0.0.1
+                        options:
+                          - name: ndots
+                            value: "1"
                       containers:
                       - name: gluetun
                         image: ghcr.io/qdm12/gluetun:latest
@@ -1309,7 +1316,7 @@ spec:
                         - name: VPN_INTERFACE
                           value: tun0
                         - name: SEARXNG_URL
-                          value: http://searxng.searxng.svc.cluster.local:8080
+                          value: http://10.45.49.242:8080
                         - name: MAX_RESULTS
                           value: '5'
                         - name: MAX_CONTENT_CHARS
