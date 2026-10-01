@@ -4,30 +4,9 @@ metadata:
   name: mcp-servers
   namespace: argocd
 spec:
-  # One ApplicationSet for all 9 MCP servers dropped from litellm's mcp_servers block when it was
-  # ported off the (now permanently dead) legacy k3s control plane - see
-  # instructions/infra2-infra-tier-plan-draft.md Phase D /
-  # instructions/infra2-infra-tier-background-draft.md for the full decision log. Same List
-  # generator + Go-template mechanism as k3s/app-of-apps/applicationset.yaml, adapted for
-  # hand-rolled manifests: every element points at the same bedag/raw chart (rather than each
-  # element's own upstream chart, as in the app-of-apps tier) and carries its own `resources:`
-  # list (Deployment/Service/ExternalSecret/Ingress as needed) inlined into valuesYaml.
-  #
-  # Deployed one server at a time, not all 9 at once: add the next element to this list, commit,
-  # `tofu apply`, verify that one server end-to-end (through litellm's mcp_servers block AND
-  # directly, where it has its own ingress) before adding the next. obsidian-mcp goes first - see
-  # the background note's priority order.
   generators:
     - list:
         elements:
-          # Legacy source: k3s-dean-gitops/apps/mcp/obsidian/ (deployment.yaml, service.yaml,
-          # externalsecret.yaml, ingress.yaml). Only change from legacy: externalsecret.yaml's
-          # secretStoreRef.name fixed bitwarden-secretstore -> bitwarden-secretsmanager (the
-          # actual live ClusterSecretStore on gmktec - same fix as litellm's), ingress.yaml's
-          # Traefik-specific annotations + ingressClassName dropped (Cilium is cluster-default).
-          # letsencrypt-prod kept as-is per Alex's 2026-09-29 call (cert-manager's issuance path
-          # is verified, new gmktec ingresses go straight to prod). Depends on couchdb.amer.dev
-          # (already live via external-ingress-private, Phase B) - no new dependency to stand up.
           - name: obsidian-mcp
             namespace: mcp-obsidian
             valuesYaml: |
@@ -155,11 +134,6 @@ spec:
                                   port:
                                     number: 8787
 
-          # Legacy source: k3s-dean-gitops/apps/bws-mcp/server/. Only changes: secretStoreRef.name
-          # fixed to bitwarden-secretsmanager, ESO-defaulted fields declared explicitly (avoids
-          # the ArgoCD OutOfSync drift seen on litellm/obsidian-mcp), legacy `property: password`
-          # dropped (native BWS provider returns the value directly). No ingress in legacy either
-          # - in-cluster only, reached through litellm.
           - name: bws-mcp
             namespace: bws-mcp
             valuesYaml: |
@@ -253,10 +227,6 @@ spec:
                                 cpu: 200m
                                 memory: 128Mi
 
-          # Legacy source: k3s-dean-gitops/apps/infra-mcp/server/. Changes: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, legacy `property: password`
-          # dropped, Traefik ingress annotations/ingressClassName dropped, reloader annotation on
-          # the pod template kept. RBAC (observer ClusterRole + tofu-state Role) kept verbatim.
           - name: infra-mcp
             namespace: infra-mcp
             valuesYaml: |
@@ -459,10 +429,6 @@ spec:
                                   port:
                                     number: 8000
 
-          # Legacy source: k3s-dean-gitops apps/github-mcp/server/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: github-mcp
             namespace: github-mcp
             valuesYaml: |
@@ -588,10 +554,6 @@ spec:
                             port:
                               number: 8000
 
-          # Legacy source: k3s-dean-gitops apps/praetor-mcp/server/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: praetor-mcp
             namespace: praetor-mcp
             valuesYaml: |
@@ -710,10 +672,6 @@ spec:
                             port:
                               number: 8000
 
-          # Legacy source: k3s-dean-gitops apps/mcp/grafana-mcp/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: grafana-mcp
             namespace: mcp-grafana-mcp
             valuesYaml: |
@@ -802,10 +760,6 @@ spec:
                             cpu: 100m
                             memory: 128Mi
 
-          # Legacy source: k3s-dean-gitops apps/mcp/komodo-mcp/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: komodo-mcp
             namespace: mcp-komodo-mcp
             valuesYaml: |
@@ -898,10 +852,6 @@ spec:
                             cpu: 100m
                             memory: 128Mi
 
-          # Legacy source: k3s-dean-gitops apps/mcp/kubernetes-mcp/serviceaccount.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: kubernetes-mcp
             namespace: mcp-kubernetes-mcp
             valuesYaml: |
@@ -1136,10 +1086,6 @@ spec:
                         configMap:
                           name: kubernetes-mcp-nginx-proxy
 
-          # Legacy source: k3s-dean-gitops apps/mcp-searxng/server/service.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
           - name: mcp-searxng
             namespace: mcp-searxng
             valuesYaml: |
@@ -1236,13 +1182,6 @@ spec:
                             port:
                               number: 8000
 
-          # Legacy source: k3s-dean-gitops apps/secure-search-mcp/server/externalsecret.yaml (+ siblings). Generated from it with: secretStoreRef.name ->
-          # bitwarden-secretsmanager, ESO-defaulted fields explicit, `property: password` dropped,
-          # Traefik ingress annotations/ingressClassName dropped, Namespace objects dropped
-          # (CreateNamespace=true), reloader annotation added where a Secret/ConfigMap is consumed.
-          # gmktec tweak: gluetun env BLOCK_MALICIOUS=off + HEALTH_VPN_DURATION_INITIAL=30s. Its initial 6s health
-          # check raced the DoT resolver warm-up plus the blocklist download (needs DNS through the tunnel itself),
-          # so the VPN restarted in a loop although the tunnel was fine (ping/TCP/DoT all ok when probed live).
           - name: secure-search-mcp
             namespace: secure-search-mcp
             valuesYaml: |
@@ -1423,11 +1362,6 @@ spec:
                             name: secure-search-mcp-server
                             port:
                               number: 8000
-
-          # Next up (background note's proposed order, not Alex-confirmed - reorder freely):
-          # bws-mcp, infra-mcp, github-mcp, then kubernetes-mcp / praetor-mcp / grafana-mcp /
-          # komodo-mcp / mcp-searxng / secure-search-mcp. Add each as its own list element here,
-          # same shape as obsidian-mcp above, once the previous one is verified working.
 
   template:
     metadata:

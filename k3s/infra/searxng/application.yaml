@@ -1,8 +1,3 @@
-# Legacy source: k3s-dean-gitops apps/searxng/. Changes: settings.yml's hardcoded secret_key removed
-# (this repo is public) and supplied as SEARXNG_SECRET from BWS `searxng-secret-key` via an
-# ExternalSecret; Traefik ingress annotations/ingressClassName dropped; Namespace object dropped
-# (CreateNamespace=true). Everything else verbatim. Consumed by mcp-searxng / secure-search-mcp
-# (k3s/infra/mcp-servers/) at searxng.searxng.svc.cluster.local:8080.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
