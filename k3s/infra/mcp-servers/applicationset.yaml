@@ -1332,7 +1332,14 @@ spec:
                           value: :8001
                         - name: FIREWALL_OUTBOUND_SUBNETS
                           value: 10.44.0.0/16,10.45.0.0/16
-                        - name: TZ
+                        # gmktec: gluetun's initial health check (6s) races its own DoT resolver warm-up plus the
+                      # malicious-hostname blocklist download (which itself needs DNS through the tunnel),
+                      # so the VPN restarted in a loop even though the tunnel was fine (ping/TCP/DoT ok).
+                      - name: BLOCK_MALICIOUS
+                        value: "off"
+                      - name: HEALTH_VPN_DURATION_INITIAL
+                        value: 30s
+                      - name: TZ
                           value: UTC
                         - name: LOG_LEVEL
                           value: info
