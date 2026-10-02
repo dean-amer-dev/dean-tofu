@@ -1,0 +1,171 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tdarr
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: tdarr-server
+            namespace: tdarr
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: tdarr-server
+            namespace: tdarr
+          spec:
+            selector:
+              app: tdarr-server
+            ports:
+            - {name: webui, port: 8265, targetPort: 8265}
+            - {name: node-comm, port: 8266, targetPort: 8266}
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: tdarr-server
+            namespace: tdarr
+            labels:
+              app: tdarr-server
+              infra2.amer.dev/single-replica-exempt: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: tdarr-server
+            template:
+              metadata:
+                labels:
+                  app: tdarr-server
+              spec:
+                containers:
+                - name: tdarr-server
+                  image: ghcr.io/haveagitgat/tdarr:2.82.02
+                  env:
+                  - {name: TZ, value: America/New_York}
+                  - {name: PUID, value: "1000"}
+                  - {name: PGID, value: "1000"}
+                  - {name: UMASK_SET, value: "002"}
+                  - {name: serverIP, value: 0.0.0.0}
+                  - {name: serverPort, value: "8266"}
+                  - {name: webUIPort, value: "8265"}
+                  - {name: internalNode, value: "false"}
+                  - {name: inContainer, value: "true"}
+                  - {name: ffmpegVersion, value: "7"}
+                  - {name: auth, value: "false"}
+                  - {name: openBrowser, value: "false"}
+                  - {name: maxLogSizeMB, value: "10"}
+                  ports:
+                  - {name: webui, containerPort: 8265}
+                  - {name: node-comm, containerPort: 8266}
+                  volumeMounts:
+                  - {name: data, mountPath: /app/server, subPath: server}
+                  - {name: data, mountPath: /app/configs, subPath: configs}
+                  - {name: logs, mountPath: /app/logs}
+                  - {name: temp, mountPath: /temp}
+                  startupProbe:
+                    tcpSocket:
+                      port: 8265
+                    periodSeconds: 10
+                    failureThreshold: 30
+                  readinessProbe:
+                    tcpSocket:
+                      port: 8265
+                    periodSeconds: 15
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 512Mi
+                    limits:
+                      memory: 2Gi
+                volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: tdarr-server
+                - name: logs
+                  emptyDir:
+                    sizeLimit: 1Gi
+                - name: temp
+                  emptyDir:
+                    sizeLimit: 1Gi
+        - apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: tdarr-node
+            namespace: tdarr
+            labels:
+              app: tdarr-node
+          spec:
+            selector:
+              matchLabels:
+                app: tdarr-node
+            template:
+              metadata:
+                labels:
+                  app: tdarr-node
+              spec:
+                containers:
+                - name: tdarr-node
+                  image: ghcr.io/haveagitgat/tdarr_node:2.82.02
+                  env:
+                  - {name: TZ, value: America/New_York}
+                  - {name: PUID, value: "1000"}
+                  - {name: PGID, value: "1000"}
+                  - {name: UMASK_SET, value: "002"}
+                  - name: nodeName
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: spec.nodeName
+                  - {name: serverIP, value: tdarr-server.tdarr.svc.cluster.local}
+                  - {name: serverPort, value: "8266"}
+                  - {name: inContainer, value: "true"}
+                  - {name: ffmpegVersion, value: "7"}
+                  - {name: startPaused, value: "true"}
+                  - {name: transcodegpuWorkers, value: "0"}
+                  - {name: transcodecpuWorkers, value: "0"}
+                  - {name: healthcheckgpuWorkers, value: "0"}
+                  - {name: healthcheckcpuWorkers, value: "0"}
+                  volumeMounts:
+                  - {name: temp, mountPath: /temp}
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      cpu: "12"
+                      memory: 8Gi
+                volumes:
+                - name: temp
+                  emptyDir:
+                    sizeLimit: 2Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tdarr
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
