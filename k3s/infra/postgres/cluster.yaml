@@ -1,0 +1,183 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: scheduling.k8s.io/v1
+          kind: PriorityClass
+          metadata:
+            name: db-critical
+          value: 1000000
+          globalDefault: false
+          description: Databases and Technitium - scheduled ahead of ordinary apps
+        - apiVersion: postgresql.cnpg.io/v1
+          kind: Cluster
+          metadata:
+            name: pg
+            namespace: postgres
+          spec:
+            instances: 3
+            imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+            priorityClassName: db-critical
+            enableSuperuserAccess: true
+            primaryUpdateStrategy: unsupervised
+            postgresql:
+              parameters:
+                shared_buffers: 512MB
+                max_connections: "200"
+            resources:
+              requests:
+                cpu: 500m
+                memory: 2Gi
+              limits:
+                memory: 2Gi
+            storage:
+              size: 20Gi
+            affinity:
+              enablePodAntiAffinity: true
+              podAntiAffinityType: required
+              topologyKey: kubernetes.io/hostname
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: pg-backup-gcs
+            namespace: postgres
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: pg-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: pg-backup
+            namespace: postgres
+          spec:
+            schedule: "0 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: dump
+                      emptyDir: {}
+                    initContainers:
+                    - name: pg-dump
+                      image: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+                      env:
+                      - name: PGHOST
+                        value: pg-rw
+                      - name: PGUSER
+                        valueFrom:
+                          secretKeyRef: {name: pg-superuser, key: username}
+                      - name: PGPASSWORD
+                        valueFrom:
+                          secretKeyRef: {name: pg-superuser, key: password}
+                      command: ["/bin/bash", "-euo", "pipefail", "-c"]
+                      args:
+                      - |
+                        d=/dump/$(date -u +%Y-%m-%dT%H%M%SZ)
+                        mkdir -p "$d"
+                        pg_dumpall --globals-only > "$d/globals.sql"
+                        for db in $(psql -d postgres -Atc "select datname from pg_database where not datistemplate and datname <> 'postgres'"); do
+                          pg_dump -Fc -f "$d/$db.dump" "$db"
+                          pg_restore -l "$d/$db.dump" > /dev/null
+                        done
+                        ls -l "$d"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 512Mi}
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/postgres
+                        for dir in /dump/*/; do
+                          ts=$(basename "$dir")
+                          for f in "$dir"*.dump; do
+                            [ -e "$f" ] || continue
+                            db=$(basename "$f" .dump)
+                            rclone copyto "$f" "$dest/$db/$ts-$db.dump"
+                          done
+                          rclone copyto "$dir"globals.sql "$dest/_globals/$ts-globals.sql"
+                        done
+                        rclone delete --min-age 14d "$dest"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgres
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
