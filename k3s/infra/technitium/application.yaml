@@ -861,6 +861,149 @@ spec:
                       name: tn-0
                       port:
                         number: 5380
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: technitium-backup-gcs
+            namespace: technitium
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: technitium-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: technitium-backup
+            namespace: technitium
+          spec:
+            schedule: "30 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: dump
+                      emptyDir: {}
+                    initContainers:
+                    - name: settings-backup
+                      image: python:3.13-alpine
+                      env:
+                      - name: ADMIN_PASSWORD
+                        valueFrom:
+                          secretKeyRef: {name: technitium-admin, key: password}
+                      command: ["python3", "-c"]
+                      args:
+                      - |
+                        import json, os, time, urllib.parse, urllib.request, zipfile
+
+                        def url(i, path, **q):
+                            return "http://tn-%d.technitium.svc.cluster.local:5380%s?%s" % (i, path, urllib.parse.urlencode(q))
+
+                        def call(i, path, form=None, **q):
+                            data = urllib.parse.urlencode(form).encode() if form else None
+                            out = json.loads(urllib.request.urlopen(urllib.request.Request(url(i, path, **q), data=data), timeout=30).read())
+                            if out.get("status") != "ok":
+                                raise RuntimeError("%s -> %s" % (path, out.get("errorMessage", out)))
+                            return out
+
+                        primary = None
+                        for i in (0, 1, 2):
+                            try:
+                                tok = call(i, "/api/user/login", form={"user": "admin", "pass": os.environ["ADMIN_PASSWORD"]})["token"]
+                            except Exception as e:
+                                print("tn-%d unreachable: %s" % (i, e))
+                                continue
+                            nodes = call(i, "/api/admin/cluster/state", token=tok)["response"]["clusterNodes"]
+                            if any(n["type"] == "Primary" and n["state"] == "Self" for n in nodes):
+                                primary = (i, tok)
+                                break
+                            call(i, "/api/user/logout", token=tok)
+                        if primary is None:
+                            raise SystemExit("no reachable Technitium primary")
+                        i, tok = primary
+                        d = "/dump/" + time.strftime("%Y-%m-%dT%H%M%SZ", time.gmtime())
+                        os.makedirs(d)
+                        f = d + "/technitium.zip"
+                        opts = {k: "true" for k in ("blockLists", "scopes", "apps", "stats", "zones", "allowedZones", "blockedZones", "dnsSettings", "logSettings", "authConfig")}
+                        opts["logs"] = "false"
+                        with urllib.request.urlopen(url(i, "/api/settings/backup", token=tok, **opts), timeout=300) as r, open(f, "wb") as o:
+                            o.write(r.read())
+                        call(i, "/api/user/logout", token=tok)
+                        with zipfile.ZipFile(f) as z:
+                            bad = z.testzip()
+                            if bad:
+                                raise SystemExit("corrupt entry in backup: " + bad)
+                            print("tn-%d primary: %s, %d bytes, %d entries" % (i, f, os.path.getsize(f), len(z.namelist())))
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: technitium-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: technitium-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: technitium-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/technitium
+                        for dir in /dump/*/; do
+                          ts=$(basename "$dir")
+                          for f in "$dir"technitium.zip; do
+                            [ -e "$f" ] || continue
+                            rclone copyto "$f" "$dest/$ts-technitium.zip"
+                          done
+                        done
+                        rclone delete --min-age 14d "$dest"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
   destination:
     server: https://kubernetes.default.svc
     namespace: technitium

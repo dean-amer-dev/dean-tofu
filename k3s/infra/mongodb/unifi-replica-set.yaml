@@ -110,6 +110,119 @@ spec:
             selector:
               matchLabels:
                 app: unifi-mongodb-svc
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: mongodb-backup-gcs
+            namespace: mongodb
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: mongodb-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: mongodb-backup
+            namespace: mongodb
+          spec:
+            schedule: "15 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: dump
+                      emptyDir: {}
+                    initContainers:
+                    - name: mongodump
+                      image: mongo:8.0.32
+                      env:
+                      - name: MONGO_PASS
+                        valueFrom:
+                          secretKeyRef: {name: unifi-mongodb-password, key: password}
+                      command: ["/bin/bash", "-euo", "pipefail", "-c"]
+                      args:
+                      - |
+                        H=unifi-mongodb-0.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-1.unifi-mongodb-svc.mongodb.svc.cluster.local:27017,unifi-mongodb-2.unifi-mongodb-svc.mongodb.svc.cluster.local:27017
+                        URI="mongodb://unifi:${MONGO_PASS}@${H}/?replicaSet=unifi-mongodb&authSource=admin&readPreference=secondaryPreferred"
+                        d=/dump/$(date -u +%Y-%m-%dT%H%M%SZ)
+                        mkdir -p "$d"
+                        for db in unifi unifi_stat unifi_audit; do
+                          mongodump --quiet --uri="$URI" --db="$db" --archive="$d/$db.archive.gz" --gzip
+                          gzip -t "$d/$db.archive.gz"
+                        done
+                        ls -l "$d"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 512Mi}
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/mongodb
+                        for dir in /dump/*/; do
+                          ts=$(basename "$dir")
+                          for f in "$dir"*.archive.gz; do
+                            [ -e "$f" ] || continue
+                            db=$(basename "$f" .archive.gz)
+                            rclone copyto "$f" "$dest/$db/$ts-$db.archive.gz"
+                          done
+                        done
+                        rclone delete --min-age 14d "$dest"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
   destination:
     server: https://kubernetes.default.svc
     namespace: mongodb
