@@ -43,6 +43,33 @@ spec:
                 conversionStrategy: Default
                 decodingStrategy: None
                 metadataPolicy: None
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: unifi-identity
+            namespace: unifi
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: unifi-identity
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: uuid
+              remoteRef:
+                key: unifi-uuid
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: reporter-uuid
+              remoteRef:
+                key: unifi-reporter-uuid
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
         - apiVersion: cert-manager.io/v1
           kind: Certificate
           metadata:
@@ -55,16 +82,6 @@ spec:
               kind: ClusterIssuer
             dnsNames:
             - unifi.amer.dev
-        - apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: unifi-config
-            namespace: unifi
-          spec:
-            accessModes: ["ReadWriteOnce"]
-            resources:
-              requests:
-                storage: 5Gi
         - apiVersion: v1
           kind: Service
           metadata:
@@ -112,7 +129,7 @@ spec:
                   app: unifi
               spec:
                 initContainers:
-                - name: write-db-config
+                - name: write-system-properties
                   image: busybox:1.37.0
                   command:
                   - sh
@@ -124,13 +141,16 @@ spec:
                     Q="replicaSet=unifi-mongodb&authSource=admin&tls=false"
                     F=/config/data/system.properties
                     touch "$F"
-                    grep -vE '^(db\.mongo\.local|db\.mongo\.uri|statdb\.mongo\.uri|unifi\.db\.name)=' "$F" > /tmp/sp || true
+                    grep -vE '^(db\.mongo\.local|db\.mongo\.uri|statdb\.mongo\.uri|unifi\.db\.name|uuid|reporter-uuid|is_default)=' "$F" > /tmp/sp || true
                     {
                       cat /tmp/sp
                       echo "db.mongo.local=false"
                       echo "db.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi?${Q}"
                       echo "statdb.mongo.uri=mongodb://unifi:${MONGO_PASS}@${H}/unifi_stat?${Q}"
                       echo "unifi.db.name=unifi"
+                      echo "uuid=${UNIFI_UUID}"
+                      echo "reporter-uuid=${UNIFI_REPORTER_UUID}"
+                      echo "is_default=false"
                     } > "$F"
                   env:
                   - name: MONGO_PASS
@@ -138,6 +158,16 @@ spec:
                       secretKeyRef:
                         name: unifi-mongodb-password
                         key: password
+                  - name: UNIFI_UUID
+                    valueFrom:
+                      secretKeyRef:
+                        name: unifi-identity
+                        key: uuid
+                  - name: UNIFI_REPORTER_UUID
+                    valueFrom:
+                      secretKeyRef:
+                        name: unifi-identity
+                        key: reporter-uuid
                   volumeMounts:
                   - name: config
                     mountPath: /config
@@ -208,8 +238,8 @@ spec:
                       memory: 2Gi
                 volumes:
                 - name: config
-                  persistentVolumeClaim:
-                    claimName: unifi-config
+                  emptyDir:
+                    sizeLimit: 1Gi
                 - name: tls
                   secret:
                     secretName: unifi-amer-dev-tls
