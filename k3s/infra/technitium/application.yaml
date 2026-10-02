@@ -1,0 +1,873 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: technitium
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: scheduling.k8s.io/v1
+          kind: PriorityClass
+          metadata:
+            name: dns-critical
+          value: 2000000
+          globalDefault: false
+          description: Cluster DNS resolvers - scheduled ahead of everything else
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: technitium-admin
+            namespace: technitium
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: technitium-admin
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: password
+              remoteRef:
+                key: ae363b89-3fd6-43e3-9a83-b42100e7aed3
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          metadata:
+            name: technitium-pfx-password
+            namespace: technitium
+          spec:
+            length: 32
+            allowRepeat: true
+            noUpper: false
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: technitium-pfx-password
+            namespace: technitium
+          spec:
+            refreshInterval: "0"
+            target:
+              name: technitium-pfx-password
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            dataFrom:
+            - sourceRef:
+                generatorRef:
+                  apiVersion: generators.external-secrets.io/v1alpha1
+                  kind: Password
+                  name: technitium-pfx-password
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: technitium-ca
+            namespace: technitium
+          spec:
+            isCA: true
+            commonName: technitium-cluster-ca
+            secretName: technitium-ca
+            duration: 87600h
+            privateKey:
+              algorithm: ECDSA
+              size: 256
+            issuerRef:
+              name: selfsigned-issuer
+              kind: ClusterIssuer
+        - apiVersion: cert-manager.io/v1
+          kind: Issuer
+          metadata:
+            name: technitium-ca
+            namespace: technitium
+          spec:
+            ca:
+              secretName: technitium-ca
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: technitium-0-tls
+            namespace: technitium
+          spec:
+            secretName: technitium-0-tls
+            duration: 2160h
+            renewBefore: 720h
+            commonName: technitium-0.dns-cluster.amer.dev
+            dnsNames:
+            - technitium-0.dns-cluster.amer.dev
+            - tn-0.technitium.svc.cluster.local
+            issuerRef:
+              name: technitium-ca
+              kind: Issuer
+            privateKey:
+              rotationPolicy: Never
+            keystores:
+              pkcs12:
+                create: true
+                profile: Modern2023
+                passwordSecretRef:
+                  name: technitium-pfx-password
+                  key: password
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: technitium-1-tls
+            namespace: technitium
+          spec:
+            secretName: technitium-1-tls
+            duration: 2160h
+            renewBefore: 720h
+            commonName: technitium-1.dns-cluster.amer.dev
+            dnsNames:
+            - technitium-1.dns-cluster.amer.dev
+            - tn-1.technitium.svc.cluster.local
+            issuerRef:
+              name: technitium-ca
+              kind: Issuer
+            privateKey:
+              rotationPolicy: Never
+            keystores:
+              pkcs12:
+                create: true
+                profile: Modern2023
+                passwordSecretRef:
+                  name: technitium-pfx-password
+                  key: password
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: technitium-2-tls
+            namespace: technitium
+          spec:
+            secretName: technitium-2-tls
+            duration: 2160h
+            renewBefore: 720h
+            commonName: technitium-2.dns-cluster.amer.dev
+            dnsNames:
+            - technitium-2.dns-cluster.amer.dev
+            - tn-2.technitium.svc.cluster.local
+            issuerRef:
+              name: technitium-ca
+              kind: Issuer
+            privateKey:
+              rotationPolicy: Never
+            keystores:
+              pkcs12:
+                create: true
+                profile: Modern2023
+                passwordSecretRef:
+                  name: technitium-pfx-password
+                  key: password
+        - apiVersion: cilium.io/v2alpha1
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: technitium
+          spec:
+            blocks:
+            - cidr: 10.100.20.249/32
+            serviceSelector:
+              matchLabels:
+                io.kubernetes.service.namespace: technitium
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: technitium-scripts
+            namespace: technitium
+          data:
+            reconciler.py: |
+              import base64
+              import hashlib
+              import json
+              import os
+              import socket
+              import ssl
+              import time
+              import urllib.error
+              import urllib.parse
+              import urllib.request
+
+              NS = os.environ.get("POD_NAMESPACE", "technitium")
+              POD = os.environ["POD_NAME"]
+              ORD = int(POD.rsplit("-", 1)[1])
+              CLUSTER_DOMAIN = os.environ["CLUSTER_DOMAIN"]
+              PASSWORD = os.environ["ADMIN_PASSWORD"]
+              PFX_PASSWORD = os.environ["PFX_PASSWORD"]
+              LEGACY = os.environ.get("LEGACY_URL", "")
+              LOCAL = "http://127.0.0.1:5380"
+              MARKER = "/etc/dns/.bootstrap-v2"
+              POD_NETWORKS = "10.44.0.0/16,10.45.0.0/16"
+              DEFAULT_BLOCKLIST = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+              SETTINGS_WHITELIST = [
+                  "defaultRecordTtl", "defaultNsRecordTtl", "defaultSoaRecordTtl", "defaultResponsiblePerson",
+                  "useSoaSerialDateScheme", "minSoaRefresh", "minSoaRetry", "zoneTransferAllowedNetworks",
+                  "notifyAllowedNetworks", "dnsAppsEnableAutomaticUpdate", "udpPayloadSize", "dnssecValidation",
+                  "eDnsClientSubnet", "eDnsClientSubnetIPv4PrefixLength", "eDnsClientSubnetIPv6PrefixLength",
+                  "qpmLimitSampleMinutes", "qpmLimitUdpTruncationPercentage", "qpmLimitBypassList",
+                  "clientTimeout", "tcpSendTimeout", "tcpReceiveTimeout", "maxConcurrentResolutionsPerCore",
+                  "recursion", "recursionNetworkACL", "randomizeName", "qnameMinimization",
+                  "resolverRetries", "resolverTimeout", "resolverConcurrency", "resolverMaxStackCount",
+                  "enableBlocking", "allowTxtBlockingReport", "blockingBypassList", "blockingType",
+                  "blockingAnswerTtl", "customBlockingAddresses", "blockListUpdateIntervalHours",
+                  "forwarders", "forwarderProtocol", "concurrentForwarding", "forwarderRetries",
+                  "forwarderTimeout", "forwarderConcurrency",
+              ]
+
+
+              def log(*args):
+                  print(time.strftime("%H:%M:%S"), *args, flush=True)
+
+
+              def call(base, path, params=None, token=None, form=None, text=None, raw=False, timeout=60):
+                  q = dict(params or {})
+                  if token:
+                      q["token"] = token
+                  url = base + path + ("?" + urllib.parse.urlencode(q) if q else "")
+                  data = None
+                  headers = {}
+                  if form is not None:
+                      data = urllib.parse.urlencode(form).encode()
+                      headers["Content-Type"] = "application/x-www-form-urlencoded"
+                  elif text is not None:
+                      data = text.encode()
+                      headers["Content-Type"] = "text/plain"
+                  req = urllib.request.Request(url, data=data, headers=headers)
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      body = resp.read()
+                  if raw:
+                      return body.decode()
+                  out = json.loads(body)
+                  if out.get("status") != "ok":
+                      raise RuntimeError("%s -> %s" % (path, out.get("errorMessage", out)))
+                  return out
+
+
+              def login(base):
+                  return call(base, "/api/user/login", form={"user": "admin", "pass": PASSWORD})["token"]
+
+
+              def state(base, tok):
+                  return call(base, "/api/admin/cluster/state", token=tok)["response"]
+
+
+              def host(i):
+                  return "tn-%d.%s.svc.cluster.local" % (i, NS)
+
+
+              def ip(i):
+                  return socket.gethostbyname(host(i))
+
+
+              def peer(i):
+                  return "http://%s:5380" % host(i)
+
+
+              def init_primary(tok):
+                  for i in (1, 2):
+                      try:
+                          if state(peer(i), login(peer(i)))["clusterInitialized"]:
+                              log("refusing to init a new cluster: tn-%d already belongs to one; promote it manually" % i)
+                              return
+                      except Exception as e:
+                          log("peer tn-%d not reachable (%s), treating as not in a cluster" % (i, e))
+                  log("initializing cluster", CLUSTER_DOMAIN)
+                  call(LOCAL, "/api/admin/cluster/init",
+                       {"clusterDomain": CLUSTER_DOMAIN, "primaryNodeIpAddresses": ip(0)}, tok, timeout=120)
+
+
+              def join(tok):
+                  try:
+                      ptok = login(peer(0))
+                      ps = state(peer(0), ptok)
+                  except Exception as e:
+                      log("primary tn-0 not reachable yet: %s" % e)
+                      return
+                  if not ps["clusterInitialized"]:
+                      log("primary tn-0 has no cluster yet")
+                      return
+                  purl = [n["url"] for n in ps["clusterNodes"] if n["state"] == "Self"][0]
+                  log("joining cluster via", purl)
+                  call(LOCAL, "/api/admin/cluster/initJoin", token=tok, timeout=300, form={
+                      "secondaryNodeIpAddresses": ip(ORD),
+                      "primaryNodeUrl": purl,
+                      "primaryNodeIpAddress": ip(0),
+                      "ignoreCertificateErrors": "false",
+                      "primaryNodeUsername": "admin",
+                      "primaryNodePassword": PASSWORD,
+                  })
+
+
+              def scalar(v):
+                  if isinstance(v, bool):
+                      return "true" if v else "false"
+                  return str(v)
+
+
+              def migrate_settings(tok, ltok):
+                  cur = call(LEGACY, "/api/settings/get", token=ltok)["response"]
+                  out = {}
+                  for k in SETTINGS_WHITELIST:
+                      v = cur.get(k)
+                      if v is None or v == [] or v == "":
+                          continue
+                      if isinstance(v, list):
+                          if any(isinstance(x, (dict, list)) for x in v):
+                              continue
+                          v = ",".join(scalar(x) for x in v)
+                      elif isinstance(v, dict):
+                          continue
+                      out[k] = scalar(v)
+                  raw_urls = [u for u in cur.get("blockListUrls") or [] if u]
+                  urls = [u for u in raw_urls if u.startswith(("http://", "https://"))]
+                  log("legacy blockListUrls:", raw_urls, "kept:", urls)
+                  if DEFAULT_BLOCKLIST not in urls:
+                      urls.append(DEFAULT_BLOCKLIST)
+                  out["blockListUrls"] = ",".join(urls)
+                  exceptions = [u[1:] for u in raw_urls if u.startswith("!")]
+                  if exceptions:
+                      call(LOCAL, "/api/allowed/import", token=tok, form={"allowedZones": ",".join(exceptions)})
+                      log("blocklist exceptions moved to allowed list:", exceptions)
+                  call(LOCAL, "/api/settings/set", token=tok, form=out)
+                  log("settings migrated:", sorted(out))
+
+
+              def migrate_lists(tok, ltok):
+                  for kind, field in (("allowed", "allowedZones"), ("blocked", "blockedZones")):
+                      txt = call(LEGACY, "/api/%s/export" % kind, token=ltok, raw=True)
+                      names = [ln.strip() for ln in txt.splitlines() if ln.strip() and not ln.startswith("#")]
+                      if names:
+                          call(LOCAL, "/api/%s/import" % kind, token=tok, form={field: ",".join(names)})
+                      log("%s list migrated: %d entries" % (kind, len(names)))
+
+
+              def migrate_forwarder_zone(tok, ltok, name):
+                  recs = call(LEGACY, "/api/zones/records/get", {"domain": name, "zone": name}, ltok)["response"]["records"]
+                  try:
+                      call(LOCAL, "/api/zones/create",
+                           {"zone": name, "type": "Forwarder", "initializeForwarder": "false"}, tok)
+                  except Exception as e:
+                      log("forwarder zone %s create: %s (continuing, may already exist)" % (name, e))
+                  for r in recs:
+                      if r["type"] != "FWD":
+                          continue
+                      d = r["rData"]
+                      call(LOCAL, "/api/zones/records/add", {
+                          "domain": name, "zone": name, "type": "FWD", "overwrite": "true",
+                          "protocol": d.get("protocol", "Udp"), "forwarder": d["forwarder"],
+                          "forwarderPriority": d.get("forwarderPriority", 0),
+                          "dnssecValidation": scalar(d.get("dnssecValidation", False)),
+                      }, tok)
+                  log("forwarder zone migrated:", name)
+
+
+              def migrate_zones(tok, ltok):
+                  zones = call(LEGACY, "/api/zones/list", token=ltok)["response"]["zones"]
+                  for z in zones:
+                      name, ztype = z["name"], z["type"]
+                      if z.get("internal") or not name:
+                          continue
+                      if ztype == "Forwarder":
+                          migrate_forwarder_zone(tok, ltok, name)
+                          continue
+                      if ztype != "Primary":
+                          log("SKIPPED zone %s (type %s) - recreate by hand" % (name, ztype))
+                          continue
+                      try:
+                          call(LOCAL, "/api/zones/create", {"zone": name, "type": "Primary"}, tok)
+                      except Exception as e:
+                          log("zone %s create: %s (continuing, may already exist)" % (name, e))
+                      body = call(LEGACY, "/api/zones/export", {"zone": name}, ltok, raw=True)
+                      call(LOCAL, "/api/zones/import",
+                           {"zone": name, "overwrite": "true", "overwriteSoaSerial": "true"}, tok, text=body)
+                      log("zone migrated:", name)
+
+
+              def bootstrap(tok):
+                  if LEGACY:
+                      ltok = login(LEGACY)
+                      migrate_settings(tok, ltok)
+                      migrate_lists(tok, ltok)
+                      migrate_zones(tok, ltok)
+                  else:
+                      call(LOCAL, "/api/settings/set", token=tok, form={"blockListUrls": DEFAULT_BLOCKLIST})
+                  with open(MARKER, "w") as f:
+                      f.write(time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                  log("bootstrap complete")
+
+
+              def ensure_tls(tok):
+                  want = "/certs/%s/keystore.p12" % POD
+                  cur = call(LOCAL, "/api/settings/get", token=tok)["response"]
+                  if cur.get("webServiceEnableTls") and cur.get("webServiceTlsCertificatePath") == want:
+                      return
+                  log("switching web service to cert-manager certificate", want)
+                  try:
+                      call(LOCAL, "/api/settings/set", token=tok, form={
+                          "webServiceEnableTls": "true",
+                          "webServiceTlsCertificatePath": want,
+                          "webServiceTlsCertificatePassword": PFX_PASSWORD,
+                      })
+                  except Exception as e:
+                      log("settings/set during TLS switch: %s (verified on next pass)" % e)
+
+
+              def _tlv(b, i):
+                  tag = b[i]
+                  n = b[i + 1]
+                  i += 2
+                  if n & 0x80:
+                      k = n & 0x7F
+                      n = int.from_bytes(b[i:i + k], "big")
+                      i += k
+                  return tag, i, n
+
+
+              def spki_sha256(der):
+                  _, i, _ = _tlv(der, 0)
+                  _, i, _ = _tlv(der, i)
+                  idx = 0
+                  while True:
+                      start = i
+                      tag, c, n = _tlv(der, i)
+                      if tag != 0xA0:
+                          idx += 1
+                          if idx == 6:
+                              return hashlib.sha256(der[start:c + n]).hexdigest().upper()
+                      i = c + n
+
+
+              def served_cert(addr):
+                  ctx = ssl.create_default_context()
+                  ctx.check_hostname = False
+                  ctx.verify_mode = ssl.CERT_NONE
+                  with socket.create_connection((addr, 53443), timeout=5) as raw:
+                      with ctx.wrap_socket(raw) as s:
+                          return s.getpeercert(True)
+
+
+              def heal_tlsa(tok, st):
+                  """Keep each secondary's TLSA record on the primary in step with the cert it actually serves.
+
+                  Nodes validate each other via DANE; a secondary that restarted while the primary was down
+                  (or got a renewed cert) leaves a stale record and the primary then cannot reach it."""
+                  for n in st["clusterNodes"]:
+                      if n["state"] == "Self":
+                          continue
+                      idx = int(n["name"].split(".")[0].rsplit("-", 1)[1])
+                      try:
+                          der = served_cert(ip(idx))
+                          recs = call(LOCAL, "/api/zones/records/get", {
+                              "domain": "_53443._tcp." + n["name"], "zone": CLUSTER_DOMAIN}, tok)["response"]["records"]
+                          have = [r["rData"]["certificateAssociationData"].upper() for r in recs if r["type"] == "TLSA"]
+                          if spki_sha256(der) in have:
+                              continue
+                          log("stale TLSA for %s, pushing its current certificate" % n["name"])
+                          call(LOCAL, "/api/admin/cluster/primary/updateSecondary", token=tok, form={
+                              "secondaryNodeId": n["id"],
+                              "secondaryNodeUrl": n["url"],
+                              "secondaryNodeIpAddresses": ",".join(n["ipAddresses"]),
+                              "secondaryNodeCertificate": base64.urlsafe_b64encode(der).decode().rstrip("="),
+                          })
+                      except Exception as e:
+                          log("heal_tlsa %s: %s" % (n["name"], e))
+
+
+              def ensure_cluster_networks(tok):
+                  """Pod and service CIDRs must be allowed to NOTIFY / transfer zones: the primary's source IP
+                  toward a secondary is its pod IP, which the secondary zones do not otherwise recognise."""
+                  want = {"notifyAllowedNetworks": POD_NETWORKS, "zoneTransferAllowedNetworks": POD_NETWORKS}
+                  cur = call(LOCAL, "/api/settings/get", token=tok)["response"]
+                  todo = {}
+                  for k, v in want.items():
+                      have = cur.get(k) or []
+                      if isinstance(have, str):
+                          have = [x for x in have.split(",") if x]
+                      if sorted(have) != sorted(v.split(",")):
+                          todo[k] = v
+                  if todo:
+                      call(LOCAL, "/api/settings/set", token=tok, form=todo)
+                      log("cluster network ACLs set:", todo)
+
+
+              def ensure_catalog_membership(tok):
+                  """Zones only replicate to secondaries when they are members of the cluster catalog zone."""
+                  catalog = "cluster-catalog." + CLUSTER_DOMAIN
+                  zones = call(LOCAL, "/api/zones/list", token=tok)["response"]["zones"]
+                  for z in zones:
+                      if z.get("internal") or z["name"] in (catalog, CLUSTER_DOMAIN):
+                          continue
+                      if z["type"] not in ("Primary", "Forwarder") or z.get("catalog") == catalog:
+                          continue
+                      call(LOCAL, "/api/zones/options/set", {"zone": z["name"], "catalog": catalog}, tok)
+                      log("zone added to cluster catalog:", z["name"])
+
+
+              def reconcile():
+                  tok = login(LOCAL)
+                  try:
+                      return reconcile_with(tok)
+                  finally:
+                      try:
+                          call(LOCAL, "/api/user/logout", token=tok)
+                      except Exception:
+                          pass
+
+
+              def reconcile_with(tok):
+                  ensure_tls(tok)
+                  st = state(LOCAL, tok)
+                  if not st["clusterInitialized"]:
+                      if ORD == 0:
+                          init_primary(tok)
+                      else:
+                          join(tok)
+                      return False
+                  is_primary = any(n["state"] == "Self" and n["type"] == "Primary" for n in st["clusterNodes"])
+                  if ORD == 0 and is_primary:
+                      heal_tlsa(tok, st)
+                      ensure_cluster_networks(tok)
+                      ensure_catalog_membership(tok)
+                      if not os.path.exists(MARKER):
+                          bootstrap(tok)
+                  return True
+
+
+              while True:
+                  ok = False
+                  try:
+                      ok = reconcile()
+                  except Exception as e:
+                      log("reconcile error:", e)
+                  time.sleep(60 if ok else 10)
+
+            probe.py: |
+              import socket
+              import sys
+
+              q = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x02ha\x04amer\x03dev\x00\x00\x01\x00\x01"
+              try:
+                  s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                  s.settimeout(2)
+                  s.sendto(q, ("127.0.0.1", 53))
+                  sys.exit(0 if s.recv(512)[:2] == b"\x12\x34" else 1)
+              except OSError:
+                  sys.exit(1)
+
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: technitium-headless
+            namespace: technitium
+          spec:
+            clusterIP: None
+            publishNotReadyAddresses: true
+            selector:
+              app: technitium
+            ports:
+            - name: http
+              port: 5380
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: tn-0
+            namespace: technitium
+          spec:
+            type: ClusterIP
+            publishNotReadyAddresses: true
+            selector:
+              statefulset.kubernetes.io/pod-name: technitium-0
+            ports:
+            - name: dns-udp
+              port: 53
+              protocol: UDP
+            - name: dns-tcp
+              port: 53
+              protocol: TCP
+            - name: http
+              port: 5380
+            - name: https
+              port: 53443
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: tn-1
+            namespace: technitium
+          spec:
+            type: ClusterIP
+            publishNotReadyAddresses: true
+            selector:
+              statefulset.kubernetes.io/pod-name: technitium-1
+            ports:
+            - name: dns-udp
+              port: 53
+              protocol: UDP
+            - name: dns-tcp
+              port: 53
+              protocol: TCP
+            - name: http
+              port: 5380
+            - name: https
+              port: 53443
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: tn-2
+            namespace: technitium
+          spec:
+            type: ClusterIP
+            publishNotReadyAddresses: true
+            selector:
+              statefulset.kubernetes.io/pod-name: technitium-2
+            ports:
+            - name: dns-udp
+              port: 53
+              protocol: UDP
+            - name: dns-tcp
+              port: 53
+              protocol: TCP
+            - name: http
+              port: 5380
+            - name: https
+              port: 53443
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: technitium-dns
+            namespace: technitium
+            annotations:
+              lbipam.cilium.io/ips: 10.100.20.249
+          spec:
+            type: LoadBalancer
+            externalTrafficPolicy: Cluster
+            selector:
+              app: technitium
+            ports:
+            - name: dns-udp
+              port: 53
+              protocol: UDP
+              targetPort: 53
+            - name: dns-tcp
+              port: 53
+              protocol: TCP
+              targetPort: 53
+        - apiVersion: policy/v1
+          kind: PodDisruptionBudget
+          metadata:
+            name: technitium
+            namespace: technitium
+          spec:
+            minAvailable: 1
+            selector:
+              matchLabels:
+                app: technitium
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: technitium
+            namespace: technitium
+            annotations:
+              reloader.stakater.com/auto: 'true'
+          spec:
+            serviceName: technitium-headless
+            replicas: 3
+            podManagementPolicy: Parallel
+            selector:
+              matchLabels:
+                app: technitium
+            template:
+              metadata:
+                labels:
+                  app: technitium
+              spec:
+                priorityClassName: dns-critical
+                terminationGracePeriodSeconds: 30
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          app: technitium
+                      topologyKey: kubernetes.io/hostname
+                containers:
+                - name: technitium
+                  image: technitium/dns-server:15.5.1
+                  env:
+                  - name: POD_NAME
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.name
+                  - name: DNS_SERVER_DOMAIN
+                    value: $(POD_NAME).dns-cluster.amer.dev
+                  - name: DNS_SERVER_ADMIN_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: technitium-admin
+                        key: password
+                  - name: SSL_CERT_DIR
+                    value: /etc/ssl/certs:/internal-ca
+                  ports:
+                  - name: dns-udp
+                    containerPort: 53
+                    protocol: UDP
+                  - name: dns-tcp
+                    containerPort: 53
+                    protocol: TCP
+                  - name: http
+                    containerPort: 5380
+                  - name: https
+                    containerPort: 53443
+                  startupProbe:
+                    tcpSocket:
+                      port: 5380
+                    periodSeconds: 5
+                    failureThreshold: 60
+                  livenessProbe:
+                    tcpSocket:
+                      port: 53
+                    periodSeconds: 20
+                    failureThreshold: 6
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      memory: 1Gi
+                  volumeMounts:
+                  - name: data
+                    mountPath: /etc/dns
+                  - name: ca
+                    mountPath: /internal-ca
+                    readOnly: true
+                  - name: tls-0
+                    mountPath: /certs/technitium-0
+                    readOnly: true
+                  - name: tls-1
+                    mountPath: /certs/technitium-1
+                    readOnly: true
+                  - name: tls-2
+                    mountPath: /certs/technitium-2
+                    readOnly: true
+                - name: reconciler
+                  image: python:3.13-alpine
+                  command: ["python", "-u", "/scripts/reconciler.py"]
+                  env:
+                  - name: POD_NAME
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.name
+                  - name: POD_NAMESPACE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+                  - name: CLUSTER_DOMAIN
+                    value: dns-cluster.amer.dev
+                  - name: LEGACY_URL
+                    value: http://10.100.20.18:5380
+                  - name: ADMIN_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: technitium-admin
+                        key: password
+                  - name: PFX_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: technitium-pfx-password
+                        key: password
+                  readinessProbe:
+                    exec:
+                      command: ["python", "/scripts/probe.py"]
+                    periodSeconds: 5
+                    timeoutSeconds: 4
+                    failureThreshold: 2
+                  resources:
+                    requests:
+                      cpu: 10m
+                      memory: 32Mi
+                    limits:
+                      memory: 128Mi
+                  volumeMounts:
+                  - name: data
+                    mountPath: /etc/dns
+                  - name: scripts
+                    mountPath: /scripts
+                volumes:
+                - name: scripts
+                  configMap:
+                    name: technitium-scripts
+                - name: ca
+                  secret:
+                    secretName: technitium-ca
+                    items:
+                    - key: ca.crt
+                      path: ca.crt
+                - name: tls-0
+                  secret:
+                    secretName: technitium-0-tls
+                - name: tls-1
+                  secret:
+                    secretName: technitium-1-tls
+                - name: tls-2
+                  secret:
+                    secretName: technitium-2-tls
+            updateStrategy:
+              type: RollingUpdate
+              rollingUpdate:
+                partition: 0
+            persistentVolumeClaimRetentionPolicy:
+              whenDeleted: Retain
+              whenScaled: Retain
+            volumeClaimTemplates:
+            - apiVersion: v1
+              kind: PersistentVolumeClaim
+              metadata:
+                name: data
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: openebs-lvm-localpv
+                volumeMode: Filesystem
+                resources:
+                  requests:
+                    storage: 5Gi
+              status:
+                phase: Pending
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: technitium-ingress
+            namespace: technitium
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: technitium-2.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+          spec:
+            tls:
+            - hosts:
+              - technitium-2.amer.dev
+              secretName: technitium-2-amer-dev-tls
+            rules:
+            - host: technitium-2.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: tn-0
+                      port:
+                        number: 5380
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: technitium
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
