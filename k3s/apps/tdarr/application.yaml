@@ -102,7 +102,7 @@ spec:
                     sizeLimit: 1Gi
                 - name: temp
                   emptyDir:
-                    sizeLimit: 5Gi
+                    sizeLimit: 1Gi
         - apiVersion: apps/v1
           kind: DaemonSet
           metadata:
@@ -152,7 +152,7 @@ spec:
                 volumes:
                 - name: temp
                   emptyDir:
-                    sizeLimit: 50Gi
+                    sizeLimit: 2Gi
   destination:
     server: https://kubernetes.default.svc
     namespace: tdarr
