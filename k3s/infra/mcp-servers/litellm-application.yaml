@@ -221,40 +221,40 @@ spec:
                   # added back here verbatim from k3s-dean-gitops/apps/litellm/server/configmap.yaml.
                   mcp_servers:
                     obsidian-mcp:
-                      url: "http://obsidian-mcp-server.mcp-obsidian.svc.cluster.local:8787/mcp"
+                      url: "http://obsidian-mcp-server.mcp.svc.cluster.local:8787/mcp"
                       transport: "http"
                     bws-mcp:
-                      url: "http://bws-mcp-server.bws-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://bws-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     infra:
-                      url: "http://infra-mcp-server.infra-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://infra-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     github:
-                      url: "http://github-mcp-server.github-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://github-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     praetor:
-                      url: "http://praetor-mcp-server.praetor-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://praetor-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     grafana-mcp:
-                      url: "http://grafana-mcp-server.mcp-grafana-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://grafana-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                     komodo-mcp:
-                      url: "http://komodo-mcp-server.mcp-komodo-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://komodo-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                     kubernetes-mcp:
-                      url: "http://kubernetes-mcp-server.mcp-kubernetes-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://kubernetes-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     searxng:
-                      url: "http://mcp-searxng-server.mcp-searxng.svc.cluster.local:8000/mcp"
+                      url: "http://mcp-searxng-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
                     secure-search:
-                      url: "http://secure-search-mcp-server.secure-search-mcp.svc.cluster.local:8000/mcp"
+                      url: "http://secure-search-mcp-server.mcp.svc.cluster.local:8000/mcp"
                       transport: "http"
                       allow_all_keys: true
 
@@ -389,6 +389,60 @@ spec:
                           except Exception as e:  # noqa: BLE001 -- best-effort, log and retry
                               print(f'refresh_owu_tools: attempt {i + 1} failed: {e}', file=sys.stderr)
                       print('refresh_owu_tools: all attempts failed, giving up', file=sys.stderr)
+
+
+                  if __name__ == '__main__':
+                      main()
+                warm_mcp_tools.py: |
+                  # litellm builds its MCP tool-name routing map when it starts. If an MCP
+                  # server is not answering yet at that moment (rollout order, node loss),
+                  # that server's tools stay unroutable ("Tool 'x' not found") until
+                  # something lists them successfully. This runs from the postStart hook,
+                  # waits for litellm to be ready, then lists every configured server's
+                  # tools until all of them answer, so a start race heals by itself.
+                  import json
+                  import os
+                  import sys
+                  import time
+                  import urllib.request
+
+                  BASE = 'http://localhost:4000'
+                  HEADERS = {'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}
+
+
+                  def get(path, timeout=60):
+                      req = urllib.request.Request(BASE + path, headers=HEADERS)
+                      with urllib.request.urlopen(req, timeout=timeout) as r:
+                          return json.loads(r.read())
+
+
+                  def missing_servers():
+                      servers = get('/v1/mcp/server')
+                      missing = []
+                      for srv in servers:
+                          try:
+                              tools = get('/mcp-rest/tools/list?server_id=' + srv['server_id']).get('tools')
+                          except Exception:  # noqa: BLE001 -- retried below
+                              tools = None
+                          if not tools:
+                              missing.append(srv['server_name'])
+                      return missing
+
+
+                  def main():
+                      deadline = time.time() + 600
+                      time.sleep(20)
+                      while time.time() < deadline:
+                          try:
+                              missing = missing_servers()
+                              if not missing:
+                                  print('warm_mcp_tools: all servers listed tools')
+                                  return
+                              print(f'warm_mcp_tools: no tools yet from {missing}', file=sys.stderr)
+                          except Exception as e:  # noqa: BLE001 -- litellm may not be up yet
+                              print(f'warm_mcp_tools: {e}', file=sys.stderr)
+                          time.sleep(15)
+                      print('warm_mcp_tools: gave up after 10 minutes', file=sys.stderr)
 
 
                   if __name__ == '__main__':
@@ -529,7 +583,7 @@ spec:
                             command:
                             - /bin/sh
                             - -c
-                            - nohup python3 /app/hooks/refresh_owu_tools.py > /tmp/owu-refresh-hook.log 2>&1 &
+                            - nohup python3 /app/hooks/refresh_owu_tools.py > /tmp/owu-refresh-hook.log 2>&1 & nohup python3 /app/hooks/warm_mcp_tools.py > /tmp/warm-mcp-tools.log 2>&1 &
                       startupProbe:
                         httpGet:
                           path: /health/readiness

@@ -8,14 +8,14 @@ spec:
     - list:
         elements:
           - name: obsidian-mcp
-            namespace: mcp-obsidian
+            namespace: mcp
             valuesYaml: |
               resources:
                 - apiVersion: external-secrets.io/v1
                   kind: ExternalSecret
                   metadata:
                     name: obsidian-mcp-secrets
-                    namespace: mcp-obsidian
+                    namespace: mcp
                   spec:
                     refreshInterval: 1h
                     secretStoreRef:
@@ -42,7 +42,7 @@ spec:
                   kind: Service
                   metadata:
                     name: obsidian-mcp-server
-                    namespace: mcp-obsidian
+                    namespace: mcp
                   spec:
                     selector:
                       app: obsidian-mcp-server
@@ -54,7 +54,7 @@ spec:
                   kind: Deployment
                   metadata:
                     name: obsidian-mcp-server
-                    namespace: mcp-obsidian
+                    namespace: mcp
                   spec:
                     replicas: 1
                     selector:
@@ -85,7 +85,7 @@ spec:
                               - name: PORT
                                 value: '8787'
                               - name: MCP_ALLOWED_HOSTS
-                                value: 'obsidian-mcp-server,obsidian-mcp-server.mcp-obsidian,obsidian-mcp-server.mcp-obsidian.svc,obsidian-mcp-server.mcp-obsidian.svc.cluster.local,mcp-obsidian.amer.dev'
+                                value: 'obsidian-mcp-server,obsidian-mcp-server.mcp,obsidian-mcp-server.mcp.svc,obsidian-mcp-server.mcp.svc.cluster.local,mcp-obsidian.amer.dev'
                               - name: COUCHDB_PASSWORD
                                 valueFrom:
                                   secretKeyRef:
@@ -112,7 +112,7 @@ spec:
                   kind: Ingress
                   metadata:
                     name: mcp-obsidian-ingress
-                    namespace: mcp-obsidian
+                    namespace: mcp
                     annotations:
                       cert-manager.io/cluster-issuer: letsencrypt-prod
                       external-dns.alpha.kubernetes.io/hostname: mcp-obsidian.amer.dev
@@ -135,14 +135,14 @@ spec:
                                     number: 8787
 
           - name: bws-mcp
-            namespace: bws-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
                 - apiVersion: external-secrets.io/v1
                   kind: ExternalSecret
                   metadata:
                     name: bws-mcp-token
-                    namespace: bws-mcp
+                    namespace: mcp
                   spec:
                     refreshInterval: 1h
                     secretStoreRef:
@@ -163,7 +163,7 @@ spec:
                   kind: Service
                   metadata:
                     name: bws-mcp-server
-                    namespace: bws-mcp
+                    namespace: mcp
                   spec:
                     selector:
                       app: bws-mcp-server
@@ -175,7 +175,7 @@ spec:
                   kind: Deployment
                   metadata:
                     name: bws-mcp-server
-                    namespace: bws-mcp
+                    namespace: mcp
                     annotations:
                       reloader.stakater.com/auto: "true"
                   spec:
@@ -228,14 +228,14 @@ spec:
                                 memory: 128Mi
 
           - name: infra-mcp
-            namespace: infra-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
                 - apiVersion: external-secrets.io/v1
                   kind: ExternalSecret
                   metadata:
                     name: infra-mcp-secrets
-                    namespace: infra-mcp
+                    namespace: mcp
                   spec:
                     refreshInterval: 1h
                     secretStoreRef:
@@ -274,7 +274,7 @@ spec:
                   kind: Service
                   metadata:
                     name: infra-mcp-server
-                    namespace: infra-mcp
+                    namespace: mcp
                   spec:
                     selector:
                       app: infra-mcp-server
@@ -282,6 +282,11 @@ spec:
                       - name: http
                         port: 8000
                         targetPort: 8000
+                - apiVersion: v1
+                  kind: ServiceAccount
+                  metadata:
+                    name: infra-mcp-sa
+                    namespace: mcp
                 - apiVersion: rbac.authorization.k8s.io/v1
                   kind: ClusterRole
                   metadata:
@@ -302,8 +307,8 @@ spec:
                     name: infra-mcp-observer
                   subjects:
                     - kind: ServiceAccount
-                      name: default
-                      namespace: infra-mcp
+                      name: infra-mcp-sa
+                      namespace: mcp
                   roleRef:
                     kind: ClusterRole
                     name: infra-mcp-observer
@@ -312,7 +317,7 @@ spec:
                   kind: Role
                   metadata:
                     name: tofu-state
-                    namespace: infra-mcp
+                    namespace: mcp
                   rules:
                     - apiGroups: [""]
                       resources: ["secrets"]
@@ -324,11 +329,11 @@ spec:
                   kind: RoleBinding
                   metadata:
                     name: tofu-state
-                    namespace: infra-mcp
+                    namespace: mcp
                   subjects:
                     - kind: ServiceAccount
-                      name: default
-                      namespace: infra-mcp
+                      name: infra-mcp-sa
+                      namespace: mcp
                   roleRef:
                     kind: Role
                     name: tofu-state
@@ -337,7 +342,7 @@ spec:
                   kind: Deployment
                   metadata:
                     name: infra-mcp-server
-                    namespace: infra-mcp
+                    namespace: mcp
                   spec:
                     replicas: 1
                     selector:
@@ -355,6 +360,7 @@ spec:
                         labels:
                           app: infra-mcp-server
                       spec:
+                        serviceAccountName: infra-mcp-sa
                         containers:
                           - name: server
                             image: amerenda/infra-mcp:sha-a38bd82
@@ -407,7 +413,7 @@ spec:
                   kind: Ingress
                   metadata:
                     name: infra-mcp-ingress
-                    namespace: infra-mcp
+                    namespace: mcp
                     annotations:
                       cert-manager.io/cluster-issuer: letsencrypt-prod
                       external-dns.alpha.kubernetes.io/hostname: infra-mcp.amer.dev
@@ -430,14 +436,14 @@ spec:
                                     number: 8000
 
           - name: github-mcp
-            namespace: github-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: external-secrets.io/v1
                 kind: ExternalSecret
                 metadata:
                   name: github-mcp-secrets
-                  namespace: github-mcp
+                  namespace: mcp
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
@@ -470,7 +476,7 @@ spec:
                 kind: Service
                 metadata:
                   name: github-mcp-server
-                  namespace: github-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: github-mcp-server
@@ -482,7 +488,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: github-mcp-server
-                  namespace: github-mcp
+                  namespace: mcp
                 spec:
                   replicas: 1
                   selector:
@@ -532,7 +538,7 @@ spec:
                 kind: Ingress
                 metadata:
                   name: github-mcp-ingress
-                  namespace: github-mcp
+                  namespace: mcp
                   annotations:
                     cert-manager.io/cluster-issuer: letsencrypt-prod
                     external-dns.alpha.kubernetes.io/hostname: github-mcp.amer.dev
@@ -555,14 +561,14 @@ spec:
                               number: 8000
 
           - name: praetor-mcp
-            namespace: praetor-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: external-secrets.io/v1
                 kind: ExternalSecret
                 metadata:
                   name: praetor-mcp-secrets
-                  namespace: praetor-mcp
+                  namespace: mcp
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
@@ -583,7 +589,7 @@ spec:
                 kind: Service
                 metadata:
                   name: praetor-mcp-server
-                  namespace: praetor-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: praetor-mcp-server
@@ -595,7 +601,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: praetor-mcp-server
-                  namespace: praetor-mcp
+                  namespace: mcp
                   annotations:
                     reloader.stakater.com/auto: 'true'
                 spec:
@@ -650,7 +656,7 @@ spec:
                 kind: Ingress
                 metadata:
                   name: praetor-mcp-ingress
-                  namespace: praetor-mcp
+                  namespace: mcp
                   annotations:
                     cert-manager.io/cluster-issuer: letsencrypt-prod
                     external-dns.alpha.kubernetes.io/hostname: praetor-mcp.amer.dev
@@ -673,14 +679,14 @@ spec:
                               number: 8000
 
           - name: grafana-mcp
-            namespace: mcp-grafana-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: external-secrets.io/v1
                 kind: ExternalSecret
                 metadata:
                   name: grafana-mcp-secrets
-                  namespace: mcp-grafana-mcp
+                  namespace: mcp
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
@@ -701,7 +707,7 @@ spec:
                 kind: Service
                 metadata:
                   name: grafana-mcp-server
-                  namespace: mcp-grafana-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: grafana-mcp-server
@@ -713,7 +719,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: grafana-mcp-server
-                  namespace: mcp-grafana-mcp
+                  namespace: mcp
                   annotations:
                     reloader.stakater.com/auto: 'true'
                 spec:
@@ -761,14 +767,14 @@ spec:
                             memory: 128Mi
 
           - name: komodo-mcp
-            namespace: mcp-komodo-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: external-secrets.io/v1
                 kind: ExternalSecret
                 metadata:
                   name: komodo-mcp-secrets
-                  namespace: mcp-komodo-mcp
+                  namespace: mcp
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
@@ -795,7 +801,7 @@ spec:
                 kind: Service
                 metadata:
                   name: komodo-mcp-server
-                  namespace: mcp-komodo-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: komodo-mcp-server
@@ -807,7 +813,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: komodo-mcp-server
-                  namespace: mcp-komodo-mcp
+                  namespace: mcp
                   annotations:
                     reloader.stakater.com/auto: 'true'
                 spec:
@@ -853,14 +859,14 @@ spec:
                             memory: 128Mi
 
           - name: kubernetes-mcp
-            namespace: mcp-kubernetes-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: v1
                 kind: ServiceAccount
                 metadata:
                   name: kubernetes-mcp-sa
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
               - apiVersion: rbac.authorization.k8s.io/v1
                 kind: ClusterRole
                 metadata:
@@ -966,7 +972,7 @@ spec:
                 subjects:
                 - kind: ServiceAccount
                   name: kubernetes-mcp-sa
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
               - apiVersion: rbac.authorization.k8s.io/v1
                 kind: ClusterRoleBinding
                 metadata:
@@ -978,19 +984,19 @@ spec:
                 subjects:
                 - kind: ServiceAccount
                   name: kubernetes-mcp-sa
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
               - apiVersion: v1
                 kind: ConfigMap
                 metadata:
                   name: kubernetes-mcp-nginx-proxy
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
                 data:
                   default.conf: "server {\n  listen 8080;\n  location / {\n    # Rewrite Host header to \"localhost\" so the MCP server accepts the request.\n    # Without this, the FQDN from cluster DNS causes host validation failure.\n    proxy_pass http://127.0.0.1:3000;\n    proxy_set_header Host localhost;\n\n    # HTTP/1.1 + empty Connection header = keep-alive to upstream\n    proxy_http_version 1.1;\n    proxy_set_header Connection \"\";\n\n    # Accommodate long-running kubernetes tool calls (list/watch, logs)\n    proxy_read_timeout 300s;\n  }\n}\n"
               - apiVersion: v1
                 kind: Service
                 metadata:
                   name: kubernetes-mcp-server
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: kubernetes-mcp-server
@@ -1002,7 +1008,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: kubernetes-mcp-server
-                  namespace: mcp-kubernetes-mcp
+                  namespace: mcp
                   annotations:
                     reloader.stakater.com/auto: 'true'
                 spec:
@@ -1087,14 +1093,14 @@ spec:
                           name: kubernetes-mcp-nginx-proxy
 
           - name: mcp-searxng
-            namespace: mcp-searxng
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: v1
                 kind: Service
                 metadata:
                   name: mcp-searxng-server
-                  namespace: mcp-searxng
+                  namespace: mcp
                 spec:
                   selector:
                     app: mcp-searxng-server
@@ -1106,7 +1112,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: mcp-searxng-server
-                  namespace: mcp-searxng
+                  namespace: mcp
                 spec:
                   replicas: 1
                   selector:
@@ -1160,7 +1166,7 @@ spec:
                 kind: Ingress
                 metadata:
                   name: mcp-searxng-ingress
-                  namespace: mcp-searxng
+                  namespace: mcp
                   annotations:
                     cert-manager.io/cluster-issuer: letsencrypt-prod
                     external-dns.alpha.kubernetes.io/hostname: mcp-searxng.amer.dev
@@ -1183,14 +1189,14 @@ spec:
                               number: 8000
 
           - name: secure-search-mcp
-            namespace: secure-search-mcp
+            namespace: mcp
             valuesYaml: |
               resources:
               - apiVersion: external-secrets.io/v1
                 kind: ExternalSecret
                 metadata:
                   name: secure-search-mcp-secrets
-                  namespace: secure-search-mcp
+                  namespace: mcp
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
@@ -1217,7 +1223,7 @@ spec:
                 kind: Service
                 metadata:
                   name: secure-search-mcp-server
-                  namespace: secure-search-mcp
+                  namespace: mcp
                 spec:
                   selector:
                     app: secure-search-mcp-server
@@ -1229,7 +1235,7 @@ spec:
                 kind: Deployment
                 metadata:
                   name: secure-search-mcp-server
-                  namespace: secure-search-mcp
+                  namespace: mcp
                   annotations:
                     reloader.stakater.com/auto: 'true'
                 spec:
@@ -1348,7 +1354,7 @@ spec:
                 kind: Ingress
                 metadata:
                   name: secure-search-mcp-ingress
-                  namespace: secure-search-mcp
+                  namespace: mcp
                   annotations:
                     cert-manager.io/cluster-issuer: letsencrypt-prod
                     external-dns.alpha.kubernetes.io/hostname: secure-search-mcp.amer.dev
