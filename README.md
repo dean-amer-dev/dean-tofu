@@ -41,6 +41,15 @@ committed to this repo. The native `gcs` backend is used, not the `s3` backend t
 S3-interop endpoint - `app-factory/tofu/main.tf` documents that HMAC keys fail there (AWS SDK Go v2
 signs headers GCS's S3-compatible API rejects as `SignatureDoesNotMatch`).
 
+## Bitwarden Secrets Manager provider auth
+
+Modules that use the `bitwarden-secrets` provider (e.g. `modules/app-postgres`) read their auth from
+the environment, never from this repo:
+
+- `BW_ACCESS_TOKEN` - a machine-account token. Read-only is enough for `plan`; `apply`/`destroy` that
+  create or delete secrets need the write-capable token.
+- `BW_ORGANIZATION_ID` - `a9b83b36-d37e-4532-88a4-b36f00df7f3d` (an identifier, not a secret).
+
 ## Provider choice for raw manifests: `alekc/kubectl`, not `hashicorp/kubernetes`
 
 `kubernetes_manifest` (the official `hashicorp/kubernetes` provider's generic-CRD resource) fetches
