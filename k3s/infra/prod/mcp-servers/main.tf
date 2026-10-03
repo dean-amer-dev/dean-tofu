@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/technitium"
+    prefix = "k3s/infra/prod/mcp-servers"
   }
 }
 
@@ -25,7 +25,11 @@ variable "kubeconfig_path" {
   default     = "~/.kube/dean.yaml"
 }
 
-resource "kubectl_manifest" "application" {
-  yaml_body = file("${path.module}/application.yaml")
+resource "kubectl_manifest" "applicationset" {
+  yaml_body = file("${path.module}/applicationset.yaml")
 }
 
+# litellm shares this state so one apply covers a server and its litellm entry
+resource "kubectl_manifest" "litellm" {
+  yaml_body = file("${path.module}/litellm-application.yaml")
+}

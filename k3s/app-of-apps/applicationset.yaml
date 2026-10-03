@@ -143,6 +143,23 @@ spec:
               analytics:
                 enabled: false
 
+          - name: longhorn
+            namespace: longhorn-system
+            repoURL: https://charts.longhorn.io
+            chart: longhorn
+            targetRevision: 1.13.0
+            syncWave: "6"
+            valuesYaml: |
+              defaultSettings:
+                defaultDataPath: /var/lib/longhorn
+                defaultReplicaCount: 3
+              persistence:
+                defaultClass: false
+                defaultClassReplicaCount: 3
+                reclaimPolicy: Retain
+              preUpgradeChecker:
+                jobEnabled: false
+
   template:
     metadata:
       name: "{{name}}"
