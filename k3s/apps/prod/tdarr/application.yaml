@@ -119,6 +119,8 @@ spec:
                 labels:
                   app: tdarr-node
               spec:
+                securityContext:
+                  supplementalGroups: [992]
                 containers:
                 - name: tdarr-node
                   image: ghcr.io/haveagitgat/tdarr_node:2.82.02
@@ -149,6 +151,7 @@ spec:
                     limits:
                       cpu: "12"
                       memory: 8Gi
+                      devic.es/dri: "1"
                 volumes:
                 - name: temp
                   emptyDir:
