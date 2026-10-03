@@ -1,0 +1,217 @@
+{
+  "name": "HEVC + Crop + Audio Remediation (quality-first, cast-compat)",
+  "description": "Combined flow: skips real HDR video untouched (still fixes audio); for everything else, auto-detects black bars via cropdetect (60s-600s sample window, 2% threshold to avoid false positives) and crops if significant, encodes to HEVC 8bit via NVENC if not already HEVC (any bit depth) or if a crop is being applied. Independently, remuxes TrueHD/DTS/DCA audio (stream 0) to EAC3 640k on every file that needs it, HDR or not. Skips files that need neither (no wasted work). Supersedes the separate 'Audio Remediation' flow - one flow per library, so this folds that logic in rather than chaining. Includes a thorough (FFmpeg/NVENC) Run Health Check pass right after Input File, before HDR/crop/codec decisions.",
+  "tags": "video,audio,quality,compat,crop",
+  "flowPlugins": [
+    {
+      "name": "Input File",
+      "sourceRepo": "Community",
+      "pluginName": "inputFile",
+      "version": "1.0.0",
+      "id": "m_n1",
+      "position": {
+        "x": 500,
+        "y": 20
+      }
+    },
+    {
+      "name": "Run Health Check",
+      "sourceRepo": "Community",
+      "pluginName": "runHealthCheck",
+      "version": "1.0.0",
+      "id": "m_hc1",
+      "position": {
+        "x": 500,
+        "y": 80
+      },
+      "inputsDB": {
+        "type": "thorough",
+        "gpuAcceleration": "auto"
+      }
+    },
+    {
+      "name": "Check HDR",
+      "sourceRepo": "Community",
+      "pluginName": "checkHdr",
+      "version": "1.0.0",
+      "id": "m_n2",
+      "position": {
+        "x": 500,
+        "y": 140
+      }
+    },
+    {
+      "name": "Begin FFmpeg",
+      "sourceRepo": "Community",
+      "pluginName": "ffmpegCommandStart",
+      "version": "1.0.0",
+      "id": "m_n3",
+      "position": {
+        "x": 250,
+        "y": 260
+      }
+    },
+    {
+      "name": "Decide: crop + codec + audio",
+      "sourceRepo": "Community",
+      "pluginName": "customFunction",
+      "version": "1.0.0",
+      "id": "m_n4",
+      "position": {
+        "x": 250,
+        "y": 380
+      },
+      "inputsDB": {
+        "code": "@@file:decide-crop-codec-audio.js@@"
+      }
+    },
+    {
+      "name": "Begin FFmpeg (HDR)",
+      "sourceRepo": "Community",
+      "pluginName": "ffmpegCommandStart",
+      "version": "1.0.0",
+      "id": "m_n3h",
+      "position": {
+        "x": 750,
+        "y": 260
+      }
+    },
+    {
+      "name": "Decide: audio only (HDR-safe)",
+      "sourceRepo": "Community",
+      "pluginName": "customFunction",
+      "version": "1.0.0",
+      "id": "m_n4h",
+      "position": {
+        "x": 750,
+        "y": 380
+      },
+      "inputsDB": {
+        "code": "@@file:decide-hdr-audio-only.js@@"
+      }
+    },
+    {
+      "name": "Set Container: MKV",
+      "sourceRepo": "Community",
+      "pluginName": "ffmpegCommandSetContainer",
+      "version": "1.0.0",
+      "id": "m_n5",
+      "position": {
+        "x": 500,
+        "y": 500
+      },
+      "inputsDB": {
+        "container": "mkv",
+        "forceConform": "false"
+      }
+    },
+    {
+      "name": "Execute",
+      "sourceRepo": "Community",
+      "pluginName": "ffmpegCommandExecute",
+      "version": "1.0.0",
+      "id": "m_n6",
+      "position": {
+        "x": 500,
+        "y": 620
+      }
+    },
+    {
+      "name": "Replace Original",
+      "sourceRepo": "Community",
+      "pluginName": "replaceOriginalFile",
+      "version": "1.0.0",
+      "id": "m_n7",
+      "position": {
+        "x": 500,
+        "y": 740
+      }
+    }
+  ],
+  "flowEdges": [
+    {
+      "id": "m_e1",
+      "source": "m_n1",
+      "sourceHandle": "1",
+      "target": "m_hc1",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e2",
+      "source": "m_n2",
+      "sourceHandle": "1",
+      "target": "m_n3h",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e3",
+      "source": "m_n3h",
+      "sourceHandle": "1",
+      "target": "m_n4h",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e4",
+      "source": "m_n4h",
+      "sourceHandle": "1",
+      "target": "m_n5",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e5",
+      "source": "m_n4h",
+      "sourceHandle": "2",
+      "target": "m_n7",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e6",
+      "source": "m_n2",
+      "sourceHandle": "2",
+      "target": "m_n3",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e7",
+      "source": "m_n3",
+      "sourceHandle": "1",
+      "target": "m_n4",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e8",
+      "source": "m_n4",
+      "sourceHandle": "1",
+      "target": "m_n5",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e9",
+      "source": "m_n4",
+      "sourceHandle": "2",
+      "target": "m_n7",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e10",
+      "source": "m_n5",
+      "sourceHandle": "1",
+      "target": "m_n6",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e11",
+      "source": "m_n6",
+      "sourceHandle": "1",
+      "target": "m_n7",
+      "targetHandle": null
+    },
+    {
+      "id": "m_e_hc1",
+      "source": "m_hc1",
+      "sourceHandle": "1",
+      "target": "m_n2",
+      "targetHandle": null
+    }
+  ]
+}
