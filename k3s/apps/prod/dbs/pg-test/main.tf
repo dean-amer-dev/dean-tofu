@@ -14,7 +14,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/apps/dbs/pg-test"
+    prefix = "k3s/apps/prod/dbs/pg-test"
   }
 }
 
@@ -47,7 +47,7 @@ resource "kubectl_manifest" "namespace" {
 }
 
 module "db" {
-  source        = "../../../../modules/app-postgres"
+  source        = "../../../../../modules/app-postgres"
   depends_on    = [kubectl_manifest.namespace]
   app_name      = "dbtest"
   app_namespace = "dbtest"

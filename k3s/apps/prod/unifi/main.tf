@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/apps/unifi"
+    prefix = "k3s/apps/prod/unifi"
   }
 }
 
@@ -27,4 +27,11 @@ variable "kubeconfig_path" {
 
 resource "kubectl_manifest" "application" {
   yaml_body = file("${path.module}/application.yaml")
+}
+
+# The MongoDB replica set for UniFi lives with UniFi, not the operator (infra/prod/mongodb). Created
+# eagerly; its MongoDBCommunity resource retries until the operator's CRDs exist
+# (SkipDryRunOnMissingResource + retry), same pattern as k3s/app-of-apps/.
+resource "kubectl_manifest" "unifi_replica_set" {
+  yaml_body = file("${path.module}/unifi-replica-set.yaml")
 }

@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/mongodb"
+    prefix = "k3s/infra/prod/technitium"
   }
 }
 
@@ -25,13 +25,7 @@ variable "kubeconfig_path" {
   default     = "~/.kube/dean.yaml"
 }
 
-resource "kubectl_manifest" "operator" {
-  yaml_body = file("${path.module}/operator.yaml")
+resource "kubectl_manifest" "application" {
+  yaml_body = file("${path.module}/application.yaml")
 }
 
-# The replica-set Application is created eagerly; its MongoDBCommunity resource retries until the
-# operator's CRDs exist (SkipDryRunOnMissingResource + retry), same pattern as k3s/app-of-apps/.
-resource "kubectl_manifest" "unifi_replica_set" {
-  depends_on = [kubectl_manifest.operator]
-  yaml_body  = file("${path.module}/unifi-replica-set.yaml")
-}

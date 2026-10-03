@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/external-ingress-private"
+    prefix = "k3s/infra/prod/mongodb"
   }
 }
 
@@ -25,6 +25,6 @@ variable "kubeconfig_path" {
   default     = "~/.kube/dean.yaml"
 }
 
-resource "kubectl_manifest" "application" {
-  yaml_body = file("${path.module}/application.yaml")
+resource "kubectl_manifest" "operator" {
+  yaml_body = file("${path.module}/operator.yaml")
 }

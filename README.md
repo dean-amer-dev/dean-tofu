@@ -25,9 +25,9 @@ syncs:
   reloader, external-dns, OpenEBS, Technitium). One `ApplicationSet` per tier (`List` generator,
   elements inline), not one `Application` per component - see the background note's
   "ApplicationSet over flat Tofu-created Applications" section for why.
-- `k3s/infra/` - shared applications required for the environment, not the cluster itself
+- `k3s/infra/{prod,dev}/` - shared applications required for the environment, not the cluster itself
   (Tailscale, monitoring, build/CI runners, DDNS, llmkube). Not started.
-- `k3s/apps/` - Alex's own applications (Wikimedia, Ecdysis, Praetor, etc.). Per the reconciliation
+- `k3s/apps/{prod,dev}/` - Alex's own applications (Wikimedia, Ecdysis, Praetor, etc.). Per the reconciliation
   with the vault's canonical `cluster-build-and-migration.md`, this tier does **not** get its own
   `ApplicationSet` - it follows the vault's model instead (tofu/`app-factory` creates one ArgoCD
   `Application` per app, pointing at a kustomize overlay or Helm chart in git). Not started.
@@ -97,3 +97,11 @@ if Tofu applies it before ArgoCD has synced the owning chart - this fails as a h
 error (not a crash-loop), and the fix is just running `tofu apply` a second time. In practice
 CRDs land within seconds of a Helm release syncing, so this is a low-probability one-time hiccup,
 not a repeat of the incremental debugging this design replaced.
+
+## prod / dev layout
+
+`k3s/infra/` and `k3s/apps/` each split into `prod/` and `dev/`. Everything live is under `prod/`
+(`k3s/apps/prod/unifi/`, `k3s/infra/prod/tailscale/`, ...); `dev/` is empty. Each root's GCS state
+prefix mirrors its path (`k3s/apps/prod/unifi`). `k3s/app-of-apps/` is cluster-level and stays
+unsplit. Resources are scoped to the app they serve, not the operator they depend on (the UniFi
+MongoDB replica set lives in `k3s/apps/prod/unifi/`, not `infra/prod/mongodb/`).

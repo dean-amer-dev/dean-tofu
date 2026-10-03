@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/runners"
+    prefix = "k3s/infra/prod/runners"
   }
 }
 

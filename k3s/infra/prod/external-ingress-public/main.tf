@@ -10,7 +10,7 @@ terraform {
 
   backend "gcs" {
     bucket = "amerenda-dean-tofu-state"
-    prefix = "k3s/infra/postgres"
+    prefix = "k3s/infra/prod/external-ingress-public"
   }
 }
 
@@ -25,13 +25,6 @@ variable "kubeconfig_path" {
   default     = "~/.kube/dean.yaml"
 }
 
-resource "kubectl_manifest" "operator" {
-  yaml_body = file("${path.module}/operator.yaml")
-}
-
-# The cluster + backup CronJob Application is created eagerly; its CNPG resources retry until the
-# operator's CRDs exist (SkipDryRunOnMissingResource + retry), same pattern as k3s/infra/mongodb/.
-resource "kubectl_manifest" "cluster" {
-  depends_on = [kubectl_manifest.operator]
-  yaml_body  = file("${path.module}/cluster.yaml")
+resource "kubectl_manifest" "application" {
+  yaml_body = file("${path.module}/application.yaml")
 }
