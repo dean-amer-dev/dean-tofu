@@ -77,6 +77,8 @@ spec:
                   - {name: data, mountPath: /app/server, subPath: server}
                   - {name: data, mountPath: /app/configs, subPath: configs}
                   - {name: logs, mountPath: /app/logs}
+                  - {name: movies, mountPath: /movies}
+                  - {name: tv, mountPath: /tv}
                   - {name: temp, mountPath: /temp}
                   startupProbe:
                     tcpSocket:
@@ -103,6 +105,14 @@ spec:
                 - name: temp
                   emptyDir:
                     sizeLimit: 1Gi
+                - name: movies
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/movies
+                - name: tv
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/tv
         - apiVersion: apps/v1
           kind: DaemonSet
           metadata:
@@ -141,6 +151,8 @@ spec:
                   - {name: healthcheckgpuWorkers, value: "0"}
                   - {name: healthcheckcpuWorkers, value: "0"}
                   volumeMounts:
+                  - {name: movies, mountPath: /movies}
+                  - {name: tv, mountPath: /tv}
                   - {name: temp, mountPath: /temp}
                   resources:
                     requests:
@@ -150,9 +162,18 @@ spec:
                       cpu: "12"
                       memory: 8Gi
                 volumes:
+                - name: movies
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/movies
+                - name: tv
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/tv
                 - name: temp
-                  emptyDir:
-                    sizeLimit: 2Gi
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/cache/tdarr
   destination:
     server: https://kubernetes.default.svc
     namespace: tdarr
