@@ -1,0 +1,119 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gpu-smoke-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: v1
+          kind: Pod
+          metadata:
+            name: xnode-server
+            namespace: gpu-smoke-test
+            labels:
+              app: xnode-server
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: Exists
+            tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            containers:
+            - name: httpd
+              image: docker.io/library/busybox:1.37
+              command: ["sh", "-c", "echo xnode-ok > /tmp/index.html && httpd -f -p 8080 -h /tmp"]
+              ports:
+              - containerPort: 8080
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: xnode-server
+            namespace: gpu-smoke-test
+          spec:
+            selector:
+              app: xnode-server
+            ports:
+            - port: 8080
+              targetPort: 8080
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: xnode-client
+            namespace: gpu-smoke-test
+          spec:
+            backoffLimit: 6
+            template:
+              spec:
+                restartPolicy: OnFailure
+                nodeSelector:
+                  gpu-worker: "true"
+                tolerations:
+                - key: gpu-worker
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+                containers:
+                - name: client
+                  image: docker.io/library/busybox:1.37
+                  command:
+                  - sh
+                  - -c
+                  - |
+                    set -e
+                    echo "client node: $(hostname)"
+                    echo "via Service DNS:"; wget -qO- -T 5 http://xnode-server.gpu-smoke-test.svc:8080/
+                    echo "via ClusterIP env-less DNS lookup:"; nslookup kubernetes.default.svc.cluster.local | tail -3
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gpu-smi
+            namespace: gpu-smoke-test
+          spec:
+            backoffLimit: 3
+            template:
+              spec:
+                restartPolicy: OnFailure
+                runtimeClassName: nvidia
+                nodeSelector:
+                  gpu-worker: "true"
+                tolerations:
+                - key: gpu-worker
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+                containers:
+                - name: smi
+                  image: docker.io/library/ubuntu:24.04
+                  command: ["nvidia-smi"]
+                  env:
+                  - {name: NVIDIA_VISIBLE_DEVICES, value: all}
+                  - {name: NVIDIA_DRIVER_CAPABILITIES, value: "utility,compute"}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gpu-smoke-test
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
