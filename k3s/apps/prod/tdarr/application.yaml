@@ -103,8 +103,9 @@ spec:
                   emptyDir:
                     sizeLimit: 1Gi
                 - name: temp
-                  emptyDir:
-                    sizeLimit: 1Gi
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/cache/tdarr
                 - name: movies
                   nfs:
                     server: 10.100.20.19
