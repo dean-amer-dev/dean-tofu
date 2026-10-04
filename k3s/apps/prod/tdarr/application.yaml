@@ -86,22 +86,15 @@ spec:
                     periodSeconds: 10
                     failureThreshold: 30
                   readinessProbe:
-                    tcpSocket:
+                    httpGet:
+                      path: /api/v2/status
                       port: 8265
                     periodSeconds: 15
                   livenessProbe:
-                    exec:
-                      command:
-                      - sh
-                      - -c
-                      - |
-                        L=/app/logs/Tdarr_Server_Log.txt
-                        [ -f "$L" ] || exit 0
-                        t=$(tail -n 200 "$L" | grep -a "Cannot convert undefined or null to object" | tail -1 | grep -o '20[0-9-]*T[0-9:]*' | head -1)
-                        [ -n "$t" ] || exit 0
-                        age=$(( $(date +%s) - $(date -d "$(echo "$t" | tr T ' ')" +%s) ))
-                        [ "$age" -gt 60 ]
-                    initialDelaySeconds: 120
+                    httpGet:
+                      path: /api/v2/status
+                      port: 8265
+                    initialDelaySeconds: 60
                     periodSeconds: 30
                     timeoutSeconds: 10
                     failureThreshold: 3
