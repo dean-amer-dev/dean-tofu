@@ -171,7 +171,7 @@ spec:
             name: technitium
           spec:
             blocks:
-            - cidr: 10.100.20.249/32
+            - cidr: 10.100.20.240/32
             serviceSelector:
               matchLabels:
                 io.kubernetes.service.namespace: technitium
@@ -641,7 +641,7 @@ spec:
             name: technitium-dns
             namespace: technitium
             annotations:
-              lbipam.cilium.io/ips: 10.100.20.249
+              lbipam.cilium.io/ips: 10.100.20.240
           spec:
             type: LoadBalancer
             externalTrafficPolicy: Cluster
