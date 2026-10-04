@@ -77,6 +77,8 @@ spec:
                   - {name: data, mountPath: /app/server, subPath: server}
                   - {name: data, mountPath: /app/configs, subPath: configs}
                   - {name: logs, mountPath: /app/logs}
+                  - {name: movies, mountPath: /movies}
+                  - {name: tv, mountPath: /tv}
                   - {name: temp, mountPath: /temp}
                   startupProbe:
                     tcpSocket:
@@ -84,9 +86,18 @@ spec:
                     periodSeconds: 10
                     failureThreshold: 30
                   readinessProbe:
-                    tcpSocket:
+                    httpGet:
+                      path: /api/v2/status
                       port: 8265
                     periodSeconds: 15
+                  livenessProbe:
+                    httpGet:
+                      path: /api/v2/status
+                      port: 8265
+                    initialDelaySeconds: 60
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                    failureThreshold: 3
                   resources:
                     requests:
                       cpu: 100m
@@ -101,8 +112,17 @@ spec:
                   emptyDir:
                     sizeLimit: 1Gi
                 - name: temp
-                  emptyDir:
-                    sizeLimit: 1Gi
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/cache/tdarr
+                - name: movies
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/movies
+                - name: tv
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/tv
         - apiVersion: apps/v1
           kind: DaemonSet
           metadata:
@@ -122,6 +142,7 @@ spec:
                 containers:
                 - name: tdarr-node
                   image: ghcr.io/haveagitgat/tdarr_node:2.82.02
+                  workingDir: /temp
                   env:
                   - {name: TZ, value: America/New_York}
                   - {name: PUID, value: "1000"}
@@ -135,24 +156,35 @@ spec:
                   - {name: serverPort, value: "8266"}
                   - {name: inContainer, value: "true"}
                   - {name: ffmpegVersion, value: "7"}
-                  - {name: startPaused, value: "true"}
+                  - {name: startPaused, value: "false"}
                   - {name: transcodegpuWorkers, value: "0"}
-                  - {name: transcodecpuWorkers, value: "0"}
+                  - {name: transcodecpuWorkers, value: "1"}
                   - {name: healthcheckgpuWorkers, value: "0"}
-                  - {name: healthcheckcpuWorkers, value: "0"}
+                  - {name: healthcheckcpuWorkers, value: "1"}
                   volumeMounts:
+                  - {name: movies, mountPath: /movies}
+                  - {name: tv, mountPath: /tv}
                   - {name: temp, mountPath: /temp}
                   resources:
                     requests:
                       cpu: 100m
                       memory: 256Mi
                     limits:
-                      cpu: "12"
+                      cpu: "8"
                       memory: 8Gi
                 volumes:
+                - name: movies
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/movies
+                - name: tv
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/tv
                 - name: temp
-                  emptyDir:
-                    sizeLimit: 2Gi
+                  nfs:
+                    server: 10.100.20.19
+                    path: /mnt/storage/cache/tdarr
   destination:
     server: https://kubernetes.default.svc
     namespace: tdarr
