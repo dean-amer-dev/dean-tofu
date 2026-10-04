@@ -101,6 +101,50 @@ spec:
                   env:
                   - {name: NVIDIA_VISIBLE_DEVICES, value: all}
                   - {name: NVIDIA_DRIVER_CAPABILITIES, value: "utility,compute"}
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: llama-bench
+            namespace: gpu-smoke-test
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                runtimeClassName: nvidia
+                nodeSelector:
+                  gpu-worker: "true"
+                tolerations:
+                - key: gpu-worker
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+                containers:
+                - name: bench
+                  image: ghcr.io/ggml-org/llama.cpp:full-cuda13
+                  command: ["/app/llama-bench"]
+                  args:
+                  - -m
+                  - /models/hub/models--ggml-org--Qwen3.8-27B-GGUF/snapshots/0669b98607d47046c7c2b3f801011d54a08cfccf/Qwen3.8-27B-Q4_K_M.gguf
+                  - -ngl
+                  - "99"
+                  - -fa
+                  - "1"
+                  - -p
+                  - "512"
+                  - -n
+                  - "128"
+                  - -r
+                  - "3"
+                  env:
+                  - {name: NVIDIA_VISIBLE_DEVICES, value: all}
+                  - {name: NVIDIA_DRIVER_CAPABILITIES, value: "utility,compute"}
+                  volumeMounts:
+                  - {name: models, mountPath: /models, readOnly: true}
+                volumes:
+                - name: models
+                  hostPath:
+                    path: /mnt/storage/models/hf-cache
   destination:
     server: https://kubernetes.default.svc
     namespace: gpu-smoke-test
