@@ -89,6 +89,22 @@ spec:
                     tcpSocket:
                       port: 8265
                     periodSeconds: 15
+                  livenessProbe:
+                    exec:
+                      command:
+                      - sh
+                      - -c
+                      - |
+                        L=/app/logs/Tdarr_Server_Log.txt
+                        [ -f "$L" ] || exit 0
+                        t=$(tail -n 200 "$L" | grep -a "Cannot convert undefined or null to object" | tail -1 | grep -o '20[0-9-]*T[0-9:]*' | head -1)
+                        [ -n "$t" ] || exit 0
+                        age=$(( $(date +%s) - $(date -d "$(echo "$t" | tr T ' ')" +%s) ))
+                        [ "$age" -gt 60 ]
+                    initialDelaySeconds: 120
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                    failureThreshold: 3
                   resources:
                     requests:
                       cpu: 100m
@@ -146,11 +162,11 @@ spec:
                   - {name: serverPort, value: "8266"}
                   - {name: inContainer, value: "true"}
                   - {name: ffmpegVersion, value: "7"}
-                  - {name: startPaused, value: "true"}
+                  - {name: startPaused, value: "false"}
                   - {name: transcodegpuWorkers, value: "0"}
-                  - {name: transcodecpuWorkers, value: "0"}
+                  - {name: transcodecpuWorkers, value: "1"}
                   - {name: healthcheckgpuWorkers, value: "0"}
-                  - {name: healthcheckcpuWorkers, value: "0"}
+                  - {name: healthcheckcpuWorkers, value: "1"}
                   volumeMounts:
                   - {name: movies, mountPath: /movies}
                   - {name: tv, mountPath: /tv}
@@ -160,7 +176,7 @@ spec:
                       cpu: 100m
                       memory: 256Mi
                     limits:
-                      cpu: "12"
+                      cpu: "8"
                       memory: 8Gi
                 volumes:
                 - name: movies
