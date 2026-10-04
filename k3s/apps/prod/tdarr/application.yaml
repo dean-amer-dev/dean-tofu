@@ -142,6 +142,7 @@ spec:
                 containers:
                 - name: tdarr-node
                   image: ghcr.io/haveagitgat/tdarr_node:2.82.02
+                  workingDir: /temp
                   env:
                   - {name: TZ, value: America/New_York}
                   - {name: PUID, value: "1000"}
