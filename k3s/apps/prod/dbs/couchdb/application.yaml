@@ -1,0 +1,460 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: couchdb
+  namespace: argocd
+spec:
+  project: default
+  sources:
+  - repoURL: https://apache.github.io/couchdb-helm
+    chart: couchdb
+    targetRevision: 4.6.3
+    helm:
+      releaseName: couchdb
+      values: |
+        clusterSize: 3
+        allowAdminParty: false
+        createAdminSecret: false
+        extraSecretName: couchdb-credentials
+        networkPolicy:
+          enabled: false
+        image:
+          tag: 3.4.2
+        initImage:
+          tag: 1.37.0
+          pullPolicy: IfNotPresent
+        autoSetup:
+          enabled: true
+          image:
+            tag: 8.11.1
+            pullPolicy: IfNotPresent
+          defaultDatabases:
+          - obsidian-dean
+        persistentVolume:
+          enabled: true
+          size: 5Gi
+        persistentVolumeClaimRetentionPolicy:
+          enabled: true
+          whenScaled: Retain
+          whenDeleted: Retain
+        priorityClassName: db-critical
+        podManagementPolicy: Parallel
+        annotations:
+          reloader.stakater.com/auto: "true"
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: "true"
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: couchdb
+                  release: couchdb
+              topologyKey: kubernetes.io/hostname
+        podDisruptionBudget:
+          enabled: true
+          maxUnavailable: 1
+        prometheusPort:
+          enabled: true
+        resources:
+          requests:
+            cpu: 250m
+            memory: 768Mi
+          limits:
+            memory: 768Mi
+        livenessProbe:
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          timeoutSeconds: 5
+        couchdbConfig:
+          couchdb:
+            uuid: f1ed4c47a628eaacc7c1c8f979358ddb
+            max_document_size: 50000000
+          cluster:
+            q: 2
+            "n": 3
+          chttpd:
+            bind_address: any
+            require_valid_user: true
+            enable_cors: true
+            max_http_request_size: 4294967296
+          chttpd_auth:
+            require_valid_user: true
+          httpd:
+            enable_cors: true
+            WWW-Authenticate: Basic realm="couchdb"
+          cors:
+            origins: "*"
+            credentials: true
+            headers: accept, authorization, content-type, origin, referer
+            methods: GET, PUT, POST, HEAD, DELETE
+            max_age: 3600
+  - repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      releaseName: couchdb-extras
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: couchdb-credentials
+            namespace: couchdb
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: couchdb-credentials
+              creationPolicy: Owner
+              deletionPolicy: Retain
+              template:
+                engineVersion: v2
+                mergePolicy: Merge
+                data:
+                  adminUsername: admin
+            data:
+            - secretKey: adminPassword
+              remoteRef:
+                key: couchdb-dean-admin-password
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: cookieAuthSecret
+              remoteRef:
+                key: couchdb-dean-secret
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: erlangCookie
+              remoteRef:
+                key: couchdb-k3s-erlang-cookie
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: couchdb-backup-gcs
+            namespace: couchdb
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: couchdb-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: couchdb-scripts
+            namespace: couchdb
+          data:
+            backup.py: |
+              import gzip
+              import json
+              import os
+              import sys
+              import time
+              import urllib.parse
+              import urllib.request
+
+              BASE = os.environ["COUCHDB_URL"]
+              OUT = sys.argv[1]
+              AUTH = "Basic " + __import__("base64").b64encode(
+                  ("%s:%s" % (os.environ["COUCHDB_USER"], os.environ["COUCHDB_PASSWORD"])).encode()).decode()
+
+
+              def req(path, timeout=600):
+                  r = urllib.request.Request(BASE + path, headers={"Authorization": AUTH})
+                  return urllib.request.urlopen(r, timeout=timeout)
+
+
+              def log(*a):
+                  print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+              dbs = [d for d in json.load(req("/_all_dbs")) if not d.startswith("_")]
+              log("databases:", dbs)
+              if not dbs:
+                  sys.exit("no databases found, refusing to report success")
+              os.makedirs(OUT, exist_ok=True)
+              for db in dbs:
+                  q = urllib.parse.quote(db, safe="")
+                  path = os.path.join(OUT, db.replace("/", "%2F") + ".json.gz")
+                  with req("/%s/_all_docs?include_docs=true&attachments=true" % q) as resp, gzip.open(path, "wb") as f:
+                      while True:
+                          chunk = resp.read(1 << 20)
+                          if not chunk:
+                              break
+                          f.write(chunk)
+                  with gzip.open(path, "rb") as f:
+                      data = json.load(f)
+                  if len(data["rows"]) != data["total_rows"]:
+                      sys.exit("%s: %d rows but total_rows=%d" % (db, len(data["rows"]), data["total_rows"]))
+                  log("%s: %d docs, %d bytes gzipped" % (db, len(data["rows"]), os.path.getsize(path)))
+            verify.py: |
+              import base64
+              import glob
+              import gzip
+              import json
+              import os
+              import sys
+              import time
+              import urllib.error
+              import urllib.parse
+              import urllib.request
+
+              BASE = os.environ["COUCHDB_URL"]
+              AUTH = "Basic " + base64.b64encode(
+                  ("%s:%s" % (os.environ["COUCHDB_USER"], os.environ["COUCHDB_PASSWORD"])).encode()).decode()
+
+
+              def call(method, path, body=None):
+                  data = json.dumps(body).encode() if body is not None else None
+                  r = urllib.request.Request(BASE + path, data=data, method=method,
+                                             headers={"Authorization": AUTH, "Content-Type": "application/json"})
+                  with urllib.request.urlopen(r, timeout=600) as resp:
+                      return json.load(resp)
+
+
+              def log(*a):
+                  print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+              files = sorted(glob.glob("/restore/*.json.gz"))
+              if not files:
+                  sys.exit("no dumps found to verify")
+              failed = False
+              for path in files:
+                  db = os.path.basename(path)[:-len(".json.gz")].replace("%2F", "/")
+                  scratch = "restore_verify_" + "".join(c if c.isalnum() else "_" for c in db).lower()
+                  with gzip.open(path, "rb") as f:
+                      rows = json.load(f)["rows"]
+                  docs = [r["doc"] for r in rows if "doc" in r]
+                  try:
+                      call("DELETE", "/" + scratch)
+                  except urllib.error.HTTPError:
+                      pass
+                  call("PUT", "/%s?n=1&q=1" % scratch)
+                  try:
+                      for i in range(0, len(docs), 200):
+                          res = call("POST", "/%s/_bulk_docs" % scratch, {"docs": docs[i:i + 200], "new_edits": False})
+                          if res:
+                              raise RuntimeError("bulk_docs errors: %s" % res[:3])
+                      got = call("GET", "/" + scratch)["doc_count"]
+                      try:
+                          live = call("GET", "/" + urllib.parse.quote(db, safe=""))["doc_count"]
+                      except urllib.error.HTTPError:
+                          live = "gone"
+                      log("%s: dump=%d restored=%d live=%s" % (db, len(docs), got, live))
+                      if got != len(docs):
+                          failed = True
+                          log("MISMATCH for", db)
+                  finally:
+                      call("DELETE", "/" + scratch)
+              if failed:
+                  sys.exit(1)
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: couchdb-backup
+            namespace: couchdb
+          spec:
+            schedule: "15 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: dump
+                      emptyDir: {}
+                    - name: scripts
+                      configMap:
+                        name: couchdb-scripts
+                    initContainers:
+                    - name: dump
+                      image: python:3.13-alpine
+                      env:
+                      - name: COUCHDB_URL
+                        value: http://couchdb-svc-couchdb.couchdb.svc.cluster.local:5984
+                      - name: COUCHDB_USER
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-credentials, key: adminUsername}
+                      - name: COUCHDB_PASSWORD
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-credentials, key: adminPassword}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - python -u /scripts/backup.py /dump/$(date -u +%Y-%m-%dT%H%M%SZ)
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      - {name: scripts, mountPath: /scripts}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 768Mi}
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/couchdb
+                        for dir in /dump/*/; do
+                          ts=$(basename "$dir")
+                          for f in "$dir"*.json.gz; do
+                            [ -e "$f" ] || continue
+                            db=$(basename "$f" .json.gz)
+                            rclone copyto "$f" "$dest/$db/$ts-$db.json.gz"
+                          done
+                        done
+                        rclone delete --min-age 30d "$dest"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: couchdb-backup-verify
+            namespace: couchdb
+          spec:
+            schedule: "0 4 * * 0"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: restore
+                      emptyDir: {}
+                    - name: scripts
+                      configMap:
+                        name: couchdb-scripts
+                    initContainers:
+                    - name: fetch
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/couchdb
+                        mkdir -p /restore
+                        for db in $(rclone lsf --dirs-only "$dest"); do
+                          db=${db%/}
+                          newest=$(rclone lsf "$dest/$db" | sort | tail -n 1)
+                          [ -n "$newest" ] || { echo "no dump for $db" >&2; exit 1; }
+                          rclone copyto "$dest/$db/$newest" "/restore/$db.json.gz"
+                        done
+                        ls -l /restore
+                      volumeMounts:
+                      - {name: restore, mountPath: /restore}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+                    containers:
+                    - name: verify
+                      image: python:3.13-alpine
+                      env:
+                      - name: COUCHDB_URL
+                        value: http://couchdb-svc-couchdb.couchdb.svc.cluster.local:5984
+                      - name: COUCHDB_USER
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-credentials, key: adminUsername}
+                      - name: COUCHDB_PASSWORD
+                        valueFrom:
+                          secretKeyRef: {name: couchdb-credentials, key: adminPassword}
+                      command: ["python", "-u", "/scripts/verify.py"]
+                      volumeMounts:
+                      - {name: restore, mountPath: /restore}
+                      - {name: scripts, mountPath: /scripts}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 768Mi}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: couchdb
+  ignoreDifferences:
+  - group: apps
+    kind: StatefulSet
+    jsonPointers:
+    - /spec/volumeClaimTemplates
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
