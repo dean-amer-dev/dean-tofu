@@ -33,6 +33,44 @@ spec:
             ports:
             - {name: webui, port: 8265, targetPort: 8265}
             - {name: node-comm, port: 8266, targetPort: 8266}
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: tdarr-media-amer-dev
+            namespace: tdarr
+          spec:
+            secretName: tdarr-media-amer-dev-tls
+            issuerRef:
+              name: letsencrypt-prod
+              kind: ClusterIssuer
+            dnsNames:
+            - tdarr.media.amer.dev
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: tdarr-ingress-amer-dev
+            namespace: tdarr
+            annotations:
+              external-dns.alpha.kubernetes.io/hostname: tdarr.media.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+          spec:
+            tls:
+            - hosts:
+              - tdarr.media.amer.dev
+              secretName: tdarr-media-amer-dev-tls
+            rules:
+            - host: tdarr.media.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: tdarr-server
+                      port:
+                        number: 8265
         - apiVersion: apps/v1
           kind: Deployment
           metadata:
