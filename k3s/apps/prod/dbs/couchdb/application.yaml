@@ -436,6 +436,74 @@ spec:
                       resources:
                         requests: {cpu: 100m, memory: 128Mi}
                         limits: {memory: 768Mi}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: couchdb-new-ingress
+            namespace: couchdb
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: couchdb-new.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+          spec:
+            ingressClassName: cilium
+            tls:
+            - hosts:
+              - couchdb-new.amer.dev
+              secretName: couchdb-new-amer-dev-tls
+            rules:
+            - host: couchdb-new.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: couchdb-svc-couchdb
+                      port:
+                        number: 5984
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: couchdb-amer-dev
+            namespace: couchdb
+          spec:
+            secretName: couchdb-amer-dev-tls
+            issuerRef:
+              name: letsencrypt-prod
+              kind: ClusterIssuer
+            dnsNames:
+            - couchdb.amer.dev
+        - apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          metadata:
+            name: couchdb
+            namespace: couchdb
+          spec:
+            endpointSelector:
+              matchLabels:
+                app: couchdb
+            ingress:
+            - fromEndpoints:
+              - matchLabels:
+                  k8s:io.kubernetes.pod.namespace: couchdb
+              toPorts:
+              - ports:
+                - {port: "5984", protocol: TCP}
+                - {port: "4369", protocol: TCP}
+                - {port: "9100", protocol: TCP}
+                - {port: "17986", protocol: TCP}
+            - fromEntities:
+              - ingress
+              toPorts:
+              - ports:
+                - {port: "5984", protocol: TCP}
+            - fromEndpoints:
+              - matchLabels:
+                  k8s:io.kubernetes.pod.namespace: mcp
+              toPorts:
+              - ports:
+                - {port: "5984", protocol: TCP}
   destination:
     server: https://kubernetes.default.svc
     namespace: couchdb
