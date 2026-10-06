@@ -72,3 +72,17 @@ resource "kubectl_manifest" "acme_prod_issuer" {
   depends_on = [kubectl_manifest.selfsigned_issuer]
   yaml_body  = file("${path.module}/acme-clusterissuer-prod.yaml")
 }
+
+# Longhorn backups to GCS: credentials ExternalSecret, the daily backup RecurringJob (retain 14 =
+# 14 days) and two StorageClasses. "longhorn-backup" carries the backup-daily selector,
+# "longhorn-no-backup" has none (opt-out). The chart's own "longhorn" class is disabled
+# (createStorageClass: false). Sits Pending until the longhorn Application has installed its CRDs.
+data "kubectl_file_documents" "longhorn_backup" {
+  content = file("${path.module}/longhorn-backup.yaml")
+}
+
+resource "kubectl_manifest" "longhorn_backup" {
+  for_each   = data.kubectl_file_documents.longhorn_backup.manifests
+  depends_on = [kubectl_manifest.app_of_apps, kubectl_manifest.cluster_secret_store]
+  yaml_body  = each.value
+}

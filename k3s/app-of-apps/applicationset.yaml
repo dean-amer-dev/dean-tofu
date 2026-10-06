@@ -154,9 +154,14 @@ spec:
                 defaultDataPath: /var/lib/longhorn
                 defaultReplicaCount: 3
               persistence:
+                createStorageClass: false
                 defaultClass: false
                 defaultClassReplicaCount: 3
                 reclaimPolicy: Retain
+              defaultBackupStore:
+                backupTarget: s3://amerenda-backups@us/k3s-dean/longhorn/
+                backupTargetCredentialSecret: longhorn-backup-gcs
+                pollInterval: "300"
               preUpgradeChecker:
                 jobEnabled: false
 
