@@ -463,15 +463,25 @@ spec:
                       args:
                       - |
                         dest=GCS:amerenda-backups/k3s-dean/couchdb
+                        n=0
+                        up() {
+                          rclone copyto "$1" "$2"
+                          want=$(stat -c %s "$1")
+                          got=$(rclone lsf --format s "$2")
+                          [ "$want" = "$got" ] || { echo "BACKUP_FAILED size mismatch $2 local=$want remote=$got" >&2; exit 1; }
+                          n=$((n+1))
+                        }
                         for dir in /dump/*/; do
                           ts=$(basename "$dir")
                           for f in "$dir"*.json.gz; do
                             [ -e "$f" ] || continue
                             db=$(basename "$f" .json.gz)
-                            rclone copyto "$f" "$dest/$db/$ts-$db.json.gz"
+                            up "$f" "$dest/$db/$ts-$db.json.gz"
                           done
                         done
-                        rclone delete --min-age 30d "$dest"
+                        [ "$n" -gt 0 ] || { echo "BACKUP_FAILED no objects uploaded to $dest" >&2; exit 1; }
+                        rclone delete --min-age 14d "$dest"
+                        echo "BACKUP_OK objects=$n dest=$dest"
                       volumeMounts:
                       - {name: dump, mountPath: /dump}
                       resources:

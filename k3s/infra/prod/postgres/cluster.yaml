@@ -149,16 +149,26 @@ spec:
                       args:
                       - |
                         dest=GCS:amerenda-backups/k3s-dean/postgres
+                        n=0
+                        up() {
+                          rclone copyto "$1" "$2"
+                          want=$(stat -c %s "$1")
+                          got=$(rclone lsf --format s "$2")
+                          [ "$want" = "$got" ] || { echo "BACKUP_FAILED size mismatch $2 local=$want remote=$got" >&2; exit 1; }
+                          n=$((n+1))
+                        }
                         for dir in /dump/*/; do
                           ts=$(basename "$dir")
                           for f in "$dir"*.dump; do
                             [ -e "$f" ] || continue
                             db=$(basename "$f" .dump)
-                            rclone copyto "$f" "$dest/$db/$ts-$db.dump"
+                            up "$f" "$dest/$db/$ts-$db.dump"
                           done
-                          rclone copyto "$dir"globals.sql "$dest/_globals/$ts-globals.sql"
+                          up "$dir"globals.sql "$dest/_globals/$ts-globals.sql"
                         done
+                        [ "$n" -gt 0 ] || { echo "BACKUP_FAILED no objects uploaded to $dest" >&2; exit 1; }
                         rclone delete --min-age 14d "$dest"
+                        echo "BACKUP_OK objects=$n dest=$dest"
                       volumeMounts:
                       - {name: dump, mountPath: /dump}
                       resources:
