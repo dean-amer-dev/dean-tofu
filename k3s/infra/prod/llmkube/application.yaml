@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llmkube
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://defilantech.github.io/LLMKube
+    chart: llmkube
+    targetRevision: 0.10.1
+    helm:
+      values: |
+        controllerManager:
+          replicaCount: 2
+          leaderElection:
+            enabled: true
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      control-plane: controller-manager
+        modelCache:
+          enabled: false
+        webhook:
+          certManager:
+            enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llmkube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
