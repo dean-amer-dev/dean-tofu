@@ -11,6 +11,7 @@ spec:
   target:
     name: longhorn-backup-gcs
     creationPolicy: Owner
+    deletionPolicy: Retain
     template:
       type: Opaque
       data:
@@ -21,12 +22,21 @@ spec:
     - secretKey: access_key
       remoteRef:
         key: k3s-dean-backups-access-key
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
     - secretKey: secret_key
       remoteRef:
         key: k3s-dean-backups-secret-key
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
     - secretKey: endpoint
       remoteRef:
         key: k3s-dean-backups-endpoint
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
 ---
 apiVersion: longhorn.io/v1beta2
 kind: RecurringJob
