@@ -145,6 +145,31 @@ spec:
                 - name: models
                   hostPath:
                     path: /mnt/storage/models/hf-cache
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ninfer-help
+            namespace: gpu-smoke-test
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                runtimeClassName: nvidia
+                nodeSelector:
+                  gpu-worker: "true"
+                tolerations:
+                - key: gpu-worker
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+                containers:
+                - name: help
+                  image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:21d9ab3e10ec2148a5fc3b69a29295642053d3ae5547625c18b0cb121db8da91
+                  args: ["--help"]
+                  env:
+                  - {name: NVIDIA_VISIBLE_DEVICES, value: all}
+                  - {name: NVIDIA_DRIVER_CAPABILITIES, value: "utility,compute"}
   destination:
     server: https://kubernetes.default.svc
     namespace: gpu-smoke-test
