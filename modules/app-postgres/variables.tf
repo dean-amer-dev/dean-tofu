@@ -40,3 +40,9 @@ variable "bws_project_id" {
   type        = string
   default     = "6353f589-39c0-45f2-9e9c-b36f00e0c282"
 }
+
+variable "bws_key" {
+  description = "BWS secret name for the generated password (defaults to <app_name>-postgres-password)"
+  type        = string
+  default     = null
+}

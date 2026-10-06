@@ -34,6 +34,10 @@ spec:
               parameters:
                 shared_buffers: 512MB
                 max_connections: "200"
+              extensions:
+              - name: pgvector
+                image:
+                  reference: ghcr.io/cloudnative-pg/pgvector:0.8.6-202610011123-18-trixie@sha256:af88b0b09f85683cc981407bc53546ea410242fa0455fa2f2cd8d1dc56833413
             resources:
               requests:
                 cpu: 500m
