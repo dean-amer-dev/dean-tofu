@@ -54,3 +54,8 @@ module "db" {
   bws_key       = "mem0-k3s-postgres-password"
   extensions    = ["vector"]
 }
+
+resource "kubectl_manifest" "application" {
+  depends_on = [module.db]
+  yaml_body  = file("${path.module}/application.yaml")
+}
