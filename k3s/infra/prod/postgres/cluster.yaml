@@ -178,6 +178,113 @@ spec:
                       resources:
                         requests: {cpu: 50m, memory: 64Mi}
                         limits: {memory: 256Mi}
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: pg-backup-verify
+            namespace: postgres
+          spec:
+            schedule: "30 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: restore
+                      emptyDir: {}
+                    initContainers:
+                    - name: fetch
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: pg-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/postgres
+                        n=0
+                        for db in $(rclone lsf --dirs-only "$dest/" | tr -d '/' | grep -v '^_'); do
+                          f=$(rclone lsf --files-only "$dest/$db/" | sort | tail -n1)
+                          [ -n "$f" ] || { echo "VERIFY_FAILED no dump for $db" >&2; exit 1; }
+                          rclone copyto "$dest/$db/$f" "/restore/$db.dump"
+                          echo "$f" > "/restore/$db.name"
+                          echo "fetched $db/$f"
+                          n=$((n+1))
+                        done
+                        [ "$n" -gt 0 ] || { echo "VERIFY_FAILED no databases found under $dest" >&2; exit 1; }
+                      volumeMounts:
+                      - {name: restore, mountPath: /restore}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+                    containers:
+                    - name: verify
+                      image: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+                      env:
+                      - name: PGHOST
+                        value: pg-rw
+                      - name: PGUSER
+                        valueFrom:
+                          secretKeyRef: {name: pg-superuser, key: username}
+                      - name: PGPASSWORD
+                        valueFrom:
+                          secretKeyRef: {name: pg-superuser, key: password}
+                      command: ["/bin/bash", "-euo", "pipefail", "-c"]
+                      args:
+                      - |
+                        failed=0
+                        for f in /restore/*.dump; do
+                          db=$(basename "$f" .dump)
+                          name=$(cat "/restore/$db.name")
+                          ts=${name%-"$db".dump}
+                          when=$(echo "$ts" | sed -E 's/T([0-9]{2})([0-9]{2})([0-9]{2})Z/ \1:\2:\3 UTC/')
+                          age=$(( $(date +%s) - $(date -d "$when" +%s) ))
+                          if [ "$age" -gt 172800 ]; then echo "VERIFY_FAILED $db newest dump $name is ${age}s old (limit 172800)" >&2; failed=1; continue; fi
+                          scratch="restore_verify_$(echo "$db" | tr -c 'a-z0-9\n' '_')"
+                          psql -d postgres -qc "drop database if exists $scratch" -c "create database $scratch"
+                          expected=$(pg_restore -l "$f" | grep -cE '^[0-9]+; [0-9]+ [0-9]+ TABLE ' || true)
+                          if ! pg_restore --no-owner --no-privileges --exit-on-error -d "$scratch" "$f"; then
+                            echo "VERIFY_FAILED $db restore errored" >&2; failed=1
+                          else
+                            tables=$(psql -d "$scratch" -Atc "select count(*) from information_schema.tables where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog','information_schema')")
+                            rows=0
+                            for t in $(psql -d "$scratch" -Atc "select format('%I.%I', table_schema, table_name) from information_schema.tables where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog','information_schema')"); do
+                              c=$(psql -d "$scratch" -Atc "select count(*) from $t")
+                              rows=$((rows + c))
+                            done
+                            if [ "$tables" != "$expected" ]; then
+                              echo "VERIFY_FAILED $db tables restored=$tables expected=$expected" >&2; failed=1
+                            else
+                              echo "VERIFY_OK $db dump=$name tables=$tables rows=$rows"
+                            fi
+                          fi
+                          psql -d postgres -qc "drop database if exists $scratch"
+                        done
+                        [ "$failed" = "0" ] || exit 1
+                        echo "VERIFY_ALL_OK"
+                      volumeMounts:
+                      - {name: restore, mountPath: /restore}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 512Mi}
   destination:
     server: https://kubernetes.default.svc
     namespace: postgres
