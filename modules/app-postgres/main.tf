@@ -18,7 +18,7 @@ terraform {
 locals {
   db_name     = coalesce(var.db_name, replace(var.app_name, "-", "_"))
   role_name   = local.db_name
-  bws_key     = "${var.app_name}-postgres-password"
+  bws_key     = coalesce(var.bws_key, "${var.app_name}-postgres-password")
   secret_name = "${var.app_name}-postgres"
   host        = "${var.cluster_name}-rw.${var.cluster_namespace}.svc"
 
@@ -58,13 +58,16 @@ resource "kubectl_manifest" "role_secret" {
     kind       = "ExternalSecret"
     metadata   = { name = "${local.secret_name}-role", namespace = var.cluster_namespace }
     spec = merge(local.external_secret_source, {
-      refreshInterval = "1h"
+      refreshInterval = "1h0m0s"
       target = {
         name           = "${local.secret_name}-role"
         creationPolicy = "Owner"
         deletionPolicy = "Retain"
         template = {
-          type = "kubernetes.io/basic-auth"
+          type          = "kubernetes.io/basic-auth"
+          engineVersion = "v2"
+          mergePolicy   = "Replace"
+          metadata      = {}
           data = {
             username = local.role_name
             password = "{{ .password }}"
@@ -118,12 +121,15 @@ resource "kubectl_manifest" "app_secret" {
     kind       = "ExternalSecret"
     metadata   = { name = local.secret_name, namespace = var.app_namespace }
     spec = merge(local.external_secret_source, {
-      refreshInterval = "1h"
+      refreshInterval = "1h0m0s"
       target = {
         name           = local.secret_name
         creationPolicy = "Owner"
         deletionPolicy = "Retain"
         template = {
+          engineVersion = "v2"
+          mergePolicy   = "Replace"
+          metadata      = {}
           data = {
             host     = local.host
             port     = "5432"
