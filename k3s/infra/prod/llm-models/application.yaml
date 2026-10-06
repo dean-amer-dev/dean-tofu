@@ -1,0 +1,91 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-models
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: Model
+            metadata:
+              name: qwen38-27b-nvfp4-ninfer
+              namespace: llm
+            spec:
+              source: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/11dbbbbbc33db198afe2f02c9232c771ff7031be/qwen3_8_27b_nvfp4.ninfer
+              sha256: 552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c
+              format: custom
+              quantization: nvfp4
+              refreshPolicy: IfNotPresent
+              hardware:
+                accelerator: cuda
+                gpu:
+                  enabled: true
+                  count: 1
+                  vendor: nvidia
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: InferenceService
+            metadata:
+              name: qwen38-27b
+              namespace: llm
+            spec:
+              modelRef: qwen38-27b-nvfp4-ninfer
+              runtime: generic
+              image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:21d9ab3e10ec2148a5fc3b69a29295642053d3ae5547625c18b0cb121db8da91
+              stageModel: true
+              replicas: 1
+              containerPort: 8080
+              endpoint:
+                port: 8080
+                type: ClusterIP
+              runtimeClassName: nvidia
+              nodeSelector:
+                gpu-worker: "true"
+              tolerations:
+                - key: gpu-worker
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+              resources:
+                gpu: 1
+                cpu: "8"
+                memory: 28Gi
+              args:
+                - $(LLMKUBE_MODEL_PATH)
+                - --host
+                - 0.0.0.0
+                - --port
+                - "8080"
+                - --model-id
+                - qwen3.8-27b
+                - --kv-dtype
+                - int8
+                - --max-context
+                - "131072"
+                - --spec
+                - mtp
+                - --draft-tokens
+                - "3"
+                - --lm-head-draft
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

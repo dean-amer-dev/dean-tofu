@@ -23,7 +23,10 @@ spec:
                     matchLabels:
                       control-plane: controller-manager
         modelCache:
-          enabled: false
+          enabled: true
+          mode: perService
+          storageClass: murderbot-local
+          size: 80Gi
         webhook:
           certManager:
             enabled: true
