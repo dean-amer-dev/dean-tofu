@@ -110,9 +110,9 @@ spec:
                 - --model-id
                 - qwen3.8-27b
                 - --kv-dtype
-                - k8v4
+                - nvfp4
                 - --max-context
-                - "131072"
+                - "180224"
                 - --spec
                 - mtp
                 - --draft-tokens
