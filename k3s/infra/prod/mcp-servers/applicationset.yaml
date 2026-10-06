@@ -28,7 +28,7 @@ spec:
                     data:
                       - secretKey: couchdb_password
                         remoteRef:
-                          key: obsidian-mcp-bridge-couchdb-password
+                          key: couchdb-k3s-mcp-password
                           conversionStrategy: Default
                           decodingStrategy: None
                           metadataPolicy: None
@@ -75,7 +75,7 @@ spec:
                               - name: COUCHDB_URL
                                 value: 'https://couchdb.amer.dev'
                               - name: COUCHDB_USER
-                                value: 'obsidian-mcp-bridge'
+                                value: 'mcp'
                               - name: COUCHDB_DATABASE
                                 value: 'obsidian-dean'
                               - name: COUCHDB_OBFUSCATE_PROPERTIES
