@@ -32,8 +32,8 @@ spec:
               name: qwen38-27b-nvfp4-ninfer
               namespace: llm
             spec:
-              source: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/11dbbbbbc33db198afe2f02c9232c771ff7031be/qwen3_8_27b_nvfp4.ninfer
-              sha256: 552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c
+              source: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/3b84117e0fd258b45bd79778ec8d8f27a4ab3d56/qwen3_8_27b_nvfp4.ninfer
+              sha256: bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32
               format: custom
               quantization: nvfp4
               refreshPolicy: IfNotPresent
@@ -67,15 +67,15 @@ spec:
                   effect: NoSchedule
               env:
                 - name: MODEL_URL
-                  value: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/11dbbbbbc33db198afe2f02c9232c771ff7031be/qwen3_8_27b_nvfp4.ninfer
+                  value: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/3b84117e0fd258b45bd79778ec8d8f27a4ab3d56/qwen3_8_27b_nvfp4.ninfer
                 - name: MODEL_SHA256
-                  value: 552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c
+                  value: bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32
                 - name: MODEL_FILE
-                  value: /models/qwen3.8-27b/11dbbbb/qwen3_8_27b_nvfp4.ninfer
+                  value: /models/qwen3.8-27b/3b84117/qwen3_8_27b_nvfp4.ninfer
                 - name: MODEL_REPO
                   value: neroued/Qwen3.8-27B-nvfp4-NInfer
                 - name: MODEL_REVISION
-                  value: 11dbbbbbc33db198afe2f02c9232c771ff7031be
+                  value: 3b84117e0fd258b45bd79778ec8d8f27a4ab3d56
               extraVolumes:
                 - name: models
                   persistentVolumeClaim:
@@ -110,16 +110,17 @@ spec:
                 - --model-id
                 - qwen3.8-27b
                 - --kv-dtype
-                - int8
+                - k8v4
                 - --max-context
-                - "65536"
+                - "131072"
                 - --spec
                 - mtp
                 - --draft-tokens
                 - "3"
-                - --lm-head-draft
                 - --max-concurrency
                 - "1"
+                - --device-state-slots
+                - "0"
   destination:
     server: https://kubernetes.default.svc
     namespace: llm
