@@ -338,65 +338,6 @@ spec:
                   "members": {"names": sorted(USERS), "roles": []},
               })
               log("_security on %s: members=%s" % (DB, sorted(USERS)))
-            migrate.py: |
-              import base64
-              import json
-              import os
-              import sys
-              import time
-              import urllib.error
-              import urllib.request
-
-              BASE = os.environ["COUCHDB_URL"]
-              ADMIN = (os.environ["COUCHDB_USER"], os.environ["COUCHDB_PASSWORD"])
-              MINI = (os.environ["MINI_USER"], os.environ["MINI_PASSWORD"])
-              MINI_URL = "http://10.100.20.18:5984/obsidian-dean"
-              DOC = "/_replicator/mini-to-k3s-obsidian-dean"
-
-
-              def basic(creds):
-                  return "Basic " + base64.b64encode(("%s:%s" % creds).encode()).decode()
-
-
-              def call(method, path, body=None):
-                  data = json.dumps(body).encode() if body is not None else None
-                  r = urllib.request.Request(BASE + path, data=data, method=method,
-                                             headers={"Authorization": basic(ADMIN), "Content-Type": "application/json"})
-                  with urllib.request.urlopen(r, timeout=60) as resp:
-                      return json.load(resp)
-
-
-              def log(*a):
-                  print(time.strftime("%H:%M:%S"), *a, flush=True)
-
-
-              ok = 0
-              for _ in range(90):
-                  try:
-                      call("GET", "/_up")
-                      ok += 1
-                      if ok >= 6:
-                          break
-                  except (urllib.error.URLError, OSError):
-                      ok = 0
-                  time.sleep(10)
-              else:
-                  sys.exit("server never accepted the admin credential")
-
-              doc = {
-                  "source": {"url": MINI_URL, "auth": {"basic": {"username": MINI[0], "password": MINI[1]}}},
-                  "target": {"url": BASE + "/obsidian-dean",
-                             "auth": {"basic": {"username": ADMIN[0], "password": ADMIN[1]}}},
-                  "continuous": True,
-                  "create_target": False,
-              }
-              try:
-                  doc["_rev"] = call("GET", DOC)["_rev"]
-              except urllib.error.HTTPError as e:
-                  if e.code != 404:
-                      raise
-              call("PUT", DOC, doc)
-              log("replication document ensured")
         - apiVersion: batch/v1
           kind: CronJob
           metadata:
@@ -581,27 +522,6 @@ spec:
                 conversionStrategy: Default
                 decodingStrategy: None
                 metadataPolicy: None
-        - apiVersion: external-secrets.io/v1
-          kind: ExternalSecret
-          metadata:
-            name: couchdb-migration-source
-            namespace: couchdb
-          spec:
-            refreshInterval: 1h
-            secretStoreRef:
-              name: bitwarden-secretsmanager
-              kind: ClusterSecretStore
-            target:
-              name: couchdb-migration-source
-              creationPolicy: Owner
-              deletionPolicy: Retain
-            data:
-            - secretKey: password
-              remoteRef:
-                key: couchdb-dean-admin-password
-                conversionStrategy: Default
-                decodingStrategy: None
-                metadataPolicy: None
         - apiVersion: batch/v1
           kind: Job
           metadata:
@@ -638,46 +558,6 @@ spec:
                     valueFrom:
                       secretKeyRef: {name: couchdb-users, key: mcp-password}
                   command: ["python", "-u", "/scripts/users.py"]
-                  volumeMounts:
-                  - {name: scripts, mountPath: /scripts}
-                  resources:
-                    requests: {cpu: 50m, memory: 64Mi}
-                    limits: {memory: 256Mi}
-        - apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: couchdb-migrate-replication
-            namespace: couchdb
-            annotations:
-              argocd.argoproj.io/hook: PostSync
-              argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-          spec:
-            backoffLimit: 3
-            template:
-              spec:
-                restartPolicy: OnFailure
-                volumes:
-                - name: scripts
-                  configMap:
-                    name: couchdb-scripts
-                containers:
-                - name: run
-                  image: python:3.13-alpine
-                  env:
-                  - name: COUCHDB_URL
-                    value: http://couchdb-svc-couchdb.couchdb.svc.cluster.local:5984
-                  - name: COUCHDB_USER
-                    valueFrom:
-                      secretKeyRef: {name: couchdb-credentials, key: adminUsername}
-                  - name: COUCHDB_PASSWORD
-                    valueFrom:
-                      secretKeyRef: {name: couchdb-credentials, key: adminPassword}
-                  - name: MINI_USER
-                    value: admin
-                  - name: MINI_PASSWORD
-                    valueFrom:
-                      secretKeyRef: {name: couchdb-migration-source, key: password}
-                  command: ["python", "-u", "/scripts/migrate.py"]
                   volumeMounts:
                   - {name: scripts, mountPath: /scripts}
                   resources:
