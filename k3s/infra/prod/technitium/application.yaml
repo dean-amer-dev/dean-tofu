@@ -508,10 +508,50 @@ spec:
                       log("zone added to cluster catalog:", z["name"])
 
 
+              HEAL_ZONES = [z for z in os.environ.get("CACHE_HEAL_ZONES", "amer.dev").split(",") if z]
+              HEAL_AUTH_SERVER = os.environ.get("CACHE_HEAL_AUTH_SERVER", "ns1.digitalocean.com")
+              HEAL_MAX_NAMES = 500
+
+
+              def negative_cache_names(tok, zone, out, depth=0):
+                  if depth > 4 or len(out) >= HEAL_MAX_NAMES:
+                      return
+                  r = call(LOCAL, "/api/cache/list", {"domain": zone}, tok)["response"]
+                  for rec in r.get("records", []):
+                      data = (rec.get("rData") or {}).get("data") or ""
+                      if rec["name"] != zone and data.startswith("NegativeCache"):
+                          out.add((rec["name"], rec["type"]))
+                  for child in r.get("zones", []):
+                      if child != zone and child.endswith("." + zone):
+                          negative_cache_names(tok, child, out, depth + 1)
+
+
+              def heal_negative_cache(tok):
+                  """A cached NXDOMAIN/NODATA is held for the zone's SOA minimum (30 min at DigitalOcean). When the
+                  authoritative server already has the record (e.g. external-dns recreated it after an ingress swap),
+                  drop the stale negative entry so this node serves the real answer within one reconcile cycle."""
+                  for zone in HEAL_ZONES:
+                      names = set()
+                      negative_cache_names(tok, zone, names)
+                      for name, rtype in sorted(names):
+                          res = call(LOCAL, "/api/dnsClient/resolve", {
+                              "server": HEAL_AUTH_SERVER, "domain": name, "type": rtype, "protocol": "Udp"}, tok)
+                          result = res["response"]["result"]
+                          if result.get("RCODE") == "NoError" and result.get("Answer"):
+                              call(LOCAL, "/api/cache/delete", {"domain": name}, tok)
+                              log("cleared stale negative cache entry:", name, rtype)
+
+
               def reconcile():
                   tok = login(LOCAL)
                   try:
-                      return reconcile_with(tok)
+                      ok = reconcile_with(tok)
+                      if ok:
+                          try:
+                              heal_negative_cache(tok)
+                          except Exception as e:
+                              log("negative cache heal error:", e)
+                      return ok
                   finally:
                       try:
                           call(LOCAL, "/api/user/logout", token=tok)
