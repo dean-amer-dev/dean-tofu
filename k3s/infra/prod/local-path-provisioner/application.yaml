@@ -1,0 +1,239 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-path-provisioner
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: local-path-provisioner-service-account
+            namespace: local-path-storage
+        - apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: local-path-provisioner
+            namespace: local-path-storage
+          rules:
+          - apiGroups:
+            - ''
+            resources:
+            - pods
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - patch
+            - update
+            - delete
+        - apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: local-path-provisioner
+          rules:
+          - apiGroups:
+            - ''
+            resources:
+            - nodes
+            - persistentvolumeclaims
+            - configmaps
+            - pods
+            - pods/log
+            verbs:
+            - get
+            - list
+            - watch
+          - apiGroups:
+            - ''
+            resources:
+            - persistentvolumes
+            verbs:
+            - get
+            - list
+            - watch
+            - create
+            - patch
+            - update
+            - delete
+          - apiGroups:
+            - ''
+            resources:
+            - events
+            verbs:
+            - create
+            - patch
+          - apiGroups:
+            - storage.k8s.io
+            resources:
+            - storageclasses
+            verbs:
+            - get
+            - list
+            - watch
+        - apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: local-path-provisioner
+            namespace: local-path-storage
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: local-path-provisioner
+          subjects:
+          - kind: ServiceAccount
+            name: local-path-provisioner-service-account
+            namespace: local-path-storage
+        - apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: local-path-provisioner
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: local-path-provisioner
+          subjects:
+          - kind: ServiceAccount
+            name: local-path-provisioner-service-account
+            namespace: local-path-storage
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: local-path-config
+            namespace: local-path-storage
+          data:
+            config.json: |-
+              {
+                "nodePathMap": [
+                  {"node": "murderbot", "paths": ["/mnt/storage/k8s-pvc"]}
+                ]
+              }
+            setup: |
+              #!/bin/sh
+              set -eu
+              mkdir -m 0777 -p "$VOL_DIR"
+            teardown: |
+              #!/bin/sh
+              set -eu
+              rm -rf "$VOL_DIR"
+            helperPod.yaml: |
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: helper-pod
+              spec:
+                priorityClassName: system-node-critical
+                tolerations:
+                  - key: gpu-worker
+                    operator: Equal
+                    value: "true"
+                    effect: NoSchedule
+                  - key: node.kubernetes.io/disk-pressure
+                    operator: Exists
+                    effect: NoSchedule
+                containers:
+                  - name: helper-pod
+                    image: docker.io/library/busybox:1.37
+                    imagePullPolicy: IfNotPresent
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: local-path-provisioner
+            namespace: local-path-storage
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: local-path-provisioner
+            template:
+              metadata:
+                labels:
+                  app: local-path-provisioner
+              spec:
+                serviceAccountName: local-path-provisioner-service-account
+                containers:
+                - name: local-path-provisioner
+                  image: docker.io/rancher/local-path-provisioner:v0.0.37
+                  imagePullPolicy: IfNotPresent
+                  command:
+                  - local-path-provisioner
+                  - start
+                  - --config
+                  - /etc/config/config.json
+                  ports:
+                  - name: health
+                    containerPort: 8080
+                    protocol: TCP
+                  startupProbe:
+                    httpGet:
+                      path: /health
+                      port: health
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    failureThreshold: 12
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: health
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /ready
+                      port: health
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                  resources:
+                    requests:
+                      cpu: 10m
+                      memory: 32Mi
+                    limits:
+                      memory: 128Mi
+                  volumeMounts:
+                  - name: config-volume
+                    mountPath: /etc/config/
+                  env:
+                  - name: POD_NAMESPACE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+                  - name: CONFIG_MOUNT_PATH
+                    value: /etc/config/
+                  - name: HEALTH_PORT
+                    value: '8080'
+                volumes:
+                - name: config-volume
+                  configMap:
+                    name: local-path-config
+        - apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: murderbot-local
+          provisioner: rancher.io/local-path
+          volumeBindingMode: WaitForFirstConsumer
+          reclaimPolicy: Delete
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-path-storage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
