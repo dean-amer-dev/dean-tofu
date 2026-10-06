@@ -15,7 +15,7 @@ spec:
         - apiVersion: v1
           kind: ServiceAccount
           metadata:
-            name: local-path-provisioner
+            name: local-path-provisioner-service-account
             namespace: local-path-storage
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: Role
@@ -90,7 +90,7 @@ spec:
             name: local-path-provisioner
           subjects:
           - kind: ServiceAccount
-            name: local-path-provisioner
+            name: local-path-provisioner-service-account
             namespace: local-path-storage
         - apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRoleBinding
@@ -102,7 +102,7 @@ spec:
             name: local-path-provisioner
           subjects:
           - kind: ServiceAccount
-            name: local-path-provisioner
+            name: local-path-provisioner-service-account
             namespace: local-path-storage
         - apiVersion: v1
           kind: ConfigMap
@@ -158,7 +158,7 @@ spec:
                 labels:
                   app: local-path-provisioner
               spec:
-                serviceAccountName: local-path-provisioner
+                serviceAccountName: local-path-provisioner-service-account
                 containers:
                 - name: local-path-provisioner
                   image: docker.io/rancher/local-path-provisioner:v0.0.37

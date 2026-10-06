@@ -12,6 +12,20 @@ spec:
     helm:
       values: |
         resources:
+          - apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: llm-models
+              namespace: llm
+              annotations:
+                argocd.argoproj.io/sync-options: Prune=false,Delete=false
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              storageClassName: murderbot-local
+              resources:
+                requests:
+                  storage: 200Gi
           - apiVersion: inference.llmkube.dev/v1alpha1
             kind: Model
             metadata:
@@ -37,8 +51,7 @@ spec:
             spec:
               modelRef: qwen38-27b-nvfp4-ninfer
               runtime: generic
-              image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:21d9ab3e10ec2148a5fc3b69a29295642053d3ae5547625c18b0cb121db8da91
-              stageModel: true
+              image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:9283ec3d698133352d24981b1383b7909178aad12928634bd5a362f2a0db2c69
               replicas: 1
               containerPort: 8080
               endpoint:
@@ -52,12 +65,44 @@ spec:
                   operator: Equal
                   value: "true"
                   effect: NoSchedule
+              env:
+                - name: MODEL_URL
+                  value: https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer/resolve/11dbbbbbc33db198afe2f02c9232c771ff7031be/qwen3_8_27b_nvfp4.ninfer
+                - name: MODEL_SHA256
+                  value: 552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c
+                - name: MODEL_FILE
+                  value: /models/qwen3.8-27b/11dbbbb/qwen3_8_27b_nvfp4.ninfer
+                - name: MODEL_REPO
+                  value: neroued/Qwen3.8-27B-nvfp4-NInfer
+                - name: MODEL_REVISION
+                  value: 11dbbbbbc33db198afe2f02c9232c771ff7031be
+              extraVolumes:
+                - name: models
+                  persistentVolumeClaim:
+                    claimName: llm-models
+              extraVolumeMounts:
+                - name: models
+                  mountPath: /models
+              probeOverrides:
+                startup:
+                  tcpSocket:
+                    port: 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 360
+                readiness:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
               resources:
                 gpu: 1
                 cpu: "8"
                 memory: 28Gi
               args:
-                - $(LLMKUBE_MODEL_PATH)
+                - $(MODEL_FILE)
                 - --host
                 - 0.0.0.0
                 - --port
@@ -67,12 +112,14 @@ spec:
                 - --kv-dtype
                 - int8
                 - --max-context
-                - "131072"
+                - "65536"
                 - --spec
                 - mtp
                 - --draft-tokens
                 - "3"
                 - --lm-head-draft
+                - --max-concurrency
+                - "1"
   destination:
     server: https://kubernetes.default.svc
     namespace: llm
