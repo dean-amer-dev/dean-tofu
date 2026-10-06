@@ -51,7 +51,7 @@ spec:
             spec:
               modelRef: qwen38-27b-nvfp4-ninfer
               runtime: generic
-              image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:9283ec3d698133352d24981b1383b7909178aad12928634bd5a362f2a0db2c69
+              image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:6ee1e235b1361f2b00eec09f72f1dd5157f01c917cb36ad35c50238f4ab2d222
               replicas: 1
               containerPort: 8080
               endpoint:
