@@ -686,20 +686,19 @@ spec:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
-            name: couchdb-new-ingress
+            name: couchdb-ingress
             namespace: couchdb
             annotations:
-              cert-manager.io/cluster-issuer: letsencrypt-prod
-              external-dns.alpha.kubernetes.io/hostname: couchdb-new.amer.dev
+              external-dns.alpha.kubernetes.io/hostname: couchdb.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
           spec:
             ingressClassName: cilium
             tls:
             - hosts:
-              - couchdb-new.amer.dev
-              secretName: couchdb-new-amer-dev-tls
+              - couchdb.amer.dev
+              secretName: couchdb-amer-dev-tls
             rules:
-            - host: couchdb-new.amer.dev
+            - host: couchdb.amer.dev
               http:
                 paths:
                 - path: /
