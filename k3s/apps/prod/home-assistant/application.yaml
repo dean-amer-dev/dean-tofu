@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: home-assistant
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://pajikos.github.io/home-assistant-helm-chart/
+    chart: home-assistant
+    targetRevision: 0.3.70
+    helm:
+      values: |
+        image:
+          tag: "2026.7.0"
+        replicaCount: 1
+        controller:
+          type: StatefulSet
+        podReplacementPolicy: Always
+        statefulSetAnnotations:
+          reloader.stakater.com/auto: "true"
+        commonLabels:
+          infra2.amer.dev/single-replica-exempt: "true"
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        env:
+          - name: TZ
+            value: America/New_York
+          - name: HA_DB_URL
+            valueFrom:
+              secretKeyRef:
+                name: home-assistant-postgres
+                key: uri
+        persistence:
+          enabled: true
+          storageClass: longhorn-backup
+          size: 5Gi
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            memory: 3Gi
+        startupProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 10
+          failureThreshold: 60
+        configuration:
+          enabled: true
+          forceInit: true
+          templateConfig: |-
+            default_config:
+            http:
+              use_x_forwarded_for: true
+              trusted_proxies:
+                - 10.0.0.0/8
+                - 172.16.0.0/12
+                - 192.168.0.0/16
+                - 127.0.0.0/8
+            recorder:
+              db_url: !env_var HA_DB_URL
+              purge_keep_days: 14
+              auto_purge: true
+            frontend:
+              themes: !include_dir_merge_named themes
+            automation: !include automations.yaml
+            script: !include scripts.yaml
+            scene: !include scenes.yaml
+        ingress:
+          enabled: true
+          className: cilium
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+            external-dns.alpha.kubernetes.io/hostname: ha-new.amer.dev
+            external-dns.alpha.kubernetes.io/ttl: "300"
+            ingress.cilium.io/loadbalancer-mode: dedicated
+            lbipam.cilium.io/sharing-key: external-ingress-private
+          hosts:
+            - host: ha-new.amer.dev
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: ha-new-amer-dev-tls
+              hosts:
+                - ha-new.amer.dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: home-assistant
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
