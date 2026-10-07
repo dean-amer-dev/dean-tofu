@@ -334,17 +334,20 @@ spec:
                 - 10.100.20.21
                 - 10.100.20.22
                 relabelingConfigs:
-                - sourceLabels:
+                - action: replace
+                  sourceLabels:
                   - __param_target
                   regex: 10.100.20.20
                   targetLabel: node
                   replacement: gmktec-1
-                - sourceLabels:
+                - action: replace
+                  sourceLabels:
                   - __param_target
                   regex: 10.100.20.21
                   targetLabel: node
                   replacement: gmktec-2
-                - sourceLabels:
+                - action: replace
+                  sourceLabels:
                   - __param_target
                   regex: 10.100.20.22
                   targetLabel: node
@@ -418,7 +421,8 @@ spec:
               labels:
                 node: mac-mini-m4
             relabelings:
-            - targetLabel: instance
+            - action: replace
+              targetLabel: instance
               replacement: mac-mini-m4
         - apiVersion: monitoring.coreos.com/v1alpha1
           kind: ScrapeConfig
@@ -447,7 +451,8 @@ spec:
               labels:
                 node: archlinux
             relabelings:
-            - targetLabel: instance
+            - action: replace
+              targetLabel: instance
               replacement: archlinux
         - apiVersion: monitoring.coreos.com/v1
           kind: PodMonitor
