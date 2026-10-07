@@ -1,0 +1,144 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+spec:
+  project: default
+  sources:
+  - repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: 2.0.11
+    helm:
+      releaseName: argo-workflows
+      values: |
+        crds:
+          install: true
+          keep: true
+          full: false
+        controller:
+          replicas: 2
+          pdb:
+            enabled: true
+            maxUnavailable: 1
+          nodeSelector:
+            kubernetes.io/os: linux
+            node-role.kubernetes.io/control-plane: "true"
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: argo-workflows-workflow-controller
+                topologyKey: kubernetes.io/hostname
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+        server:
+          replicas: 2
+          authModes:
+          - client
+          pdb:
+            enabled: true
+            maxUnavailable: 1
+          nodeSelector:
+            kubernetes.io/os: linux
+            node-role.kubernetes.io/control-plane: "true"
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: argo-workflows-server
+                topologyKey: kubernetes.io/hostname
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+  - repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      releaseName: argo-workflows-edge
+      values: |
+        resources:
+        - apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          metadata:
+            name: argo-workflows-server
+            namespace: argo-workflows
+          spec:
+            endpointSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-workflows-server
+            ingress:
+            - fromEntities:
+              - ingress
+              toPorts:
+              - ports:
+                - {port: "2746", protocol: TCP}
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: argo-workflows-amer-dev
+            namespace: argo-workflows
+          spec:
+            secretName: argo-workflows-amer-dev-tls
+            issuerRef:
+              name: letsencrypt-prod
+              kind: ClusterIssuer
+            dnsNames:
+            - workflows.amer.dev
+            - flows.amer.dev
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argo-workflows-ingress
+            namespace: argo-workflows
+            annotations:
+              external-dns.alpha.kubernetes.io/hostname: workflows.amer.dev,flows.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+          spec:
+            ingressClassName: cilium
+            tls:
+            - hosts:
+              - workflows.amer.dev
+              - flows.amer.dev
+              secretName: argo-workflows-amer-dev-tls
+            rules:
+            - host: workflows.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: argo-workflows-server
+                      port:
+                        number: 2746
+            - host: flows.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: argo-workflows-server
+                      port:
+                        number: 2746
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-workflows
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
