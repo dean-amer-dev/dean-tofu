@@ -12,29 +12,34 @@ spec:
     helm:
       values: |
         image:
-          tag: "2026.7.0"
+          tag: 2026.7.0
         replicaCount: 1
         controller:
           type: Deployment
         deploymentStrategy: Recreate
         deploymentAnnotations:
-          reloader.stakater.com/auto: "true"
+          reloader.stakater.com/auto: 'true'
         commonLabels:
-          infra2.amer.dev/single-replica-exempt: "true"
+          infra2.amer.dev/single-replica-exempt: 'true'
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         env:
-          - name: TZ
-            value: America/New_York
-          - name: HA_DB_URL
-            valueFrom:
-              secretKeyRef:
-                name: home-assistant-postgres
-                key: uri
+        - name: TZ
+          value: America/New_York
+        - name: HA_DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: home-assistant-postgres
+              key: uri
+        - name: JELLYFIN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: home-assistant-env
+              key: JELLYFIN_API_KEY
         persistence:
           enabled: true
           storageClass: longhorn-backup
-          size: 5Gi
+          size: 15Gi
         resources:
           requests:
             cpu: 250m
@@ -50,7 +55,7 @@ spec:
         configuration:
           enabled: true
           forceInit: true
-          templateConfig: |-
+          templateConfig: |
             default_config:
             http:
               use_x_forwarded_for: true
@@ -74,18 +79,227 @@ spec:
           annotations:
             cert-manager.io/cluster-issuer: letsencrypt-prod
             external-dns.alpha.kubernetes.io/hostname: ha-new.amer.dev
-            external-dns.alpha.kubernetes.io/ttl: "300"
+            external-dns.alpha.kubernetes.io/ttl: '300'
             ingress.cilium.io/loadbalancer-mode: dedicated
             lbipam.cilium.io/sharing-key: external-ingress-private
           hosts:
-            - host: ha-new.amer.dev
-              paths:
-                - path: /
-                  pathType: Prefix
+          - host: ha-new.amer.dev
+            paths:
+            - path: /
+              pathType: Prefix
           tls:
-            - secretName: ha-new-amer-dev-tls
-              hosts:
-                - ha-new.amer.dev
+          - secretName: ha-new-amer-dev-tls
+            hosts:
+            - ha-new.amer.dev
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                  - gmktec-1
+                  - gmktec-2
+                  - gmktec-3
+        initContainers:
+        - name: ha-init
+          image: alpine:3
+          command:
+          - sh
+          - -c
+          args:
+          - |
+            #!/bin/sh
+            # Home Assistant init - installs HACS + frontend cards into the HA config volume
+            # Runs as a one-shot container before HA starts.
+            # All versions are pinned. Bump versions here, push, redeploy.
+            set -e
+
+            # Scene file for configuration.yaml `scene: !include scenes.yaml` - must exist but is not
+            # Git-managed (compose does not bind-mount it). UI-created / editor scenes persist here on
+            # the volume. Empty list is valid; HA adds scenes when you use the UI.
+            if [ ! -f /config/scenes.yaml ]; then
+              echo "[]" > /config/scenes.yaml
+              echo "Seeded empty /config/scenes.yaml"
+            fi
+
+            # -- Versions -------------------------------------------------
+            HACS_VERSION="2.0.5"
+            MUSHROOM_VERSION="v5.1.1"
+            BUBBLE_VERSION="v3.1.4"
+            CARD_MOD_VERSION="v4.2.1"
+            VSTACK_VERSION="v1.0.1"
+            STREAMLINE_VERSION="v0.2.0"
+            HUE_LIGHT_VERSION="v1.9.0"
+            MIDEA_AC_LAN_VERSION="v0.6.11"
+            IPHONEDETECT_VERSION="2.5.0"
+
+            # Combined marker for all components
+            MARKER=/config/.ha-init-versions
+            EXPECTED="${HACS_VERSION}|${MUSHROOM_VERSION}|${BUBBLE_VERSION}|${CARD_MOD_VERSION}|${VSTACK_VERSION}|${STREAMLINE_VERSION}|${HUE_LIGHT_VERSION}|${MIDEA_AC_LAN_VERSION}|${IPHONEDETECT_VERSION}"
+
+            if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$EXPECTED" ]; then
+              echo "All components at expected versions - nothing to do"
+              exit 0
+            fi
+
+            apk add --no-cache wget unzip
+
+            # -- HACS integration -----------------------------------------
+            HACS_MARKER=/config/custom_components/hacs/.version
+            if [ ! -f "$HACS_MARKER" ] || [ "$(cat "$HACS_MARKER")" != "$HACS_VERSION" ]; then
+              echo "Installing HACS ${HACS_VERSION}..."
+              wget -qO /tmp/hacs.zip "https://github.com/hacs/integration/releases/download/${HACS_VERSION}/hacs.zip"
+              rm -rf /config/custom_components/hacs
+              mkdir -p /config/custom_components/hacs
+              unzip -o /tmp/hacs.zip -d /config/custom_components/hacs
+              echo "$HACS_VERSION" > "$HACS_MARKER"
+              echo "HACS ${HACS_VERSION} installed"
+            else
+              echo "HACS ${HACS_VERSION} already installed"
+            fi
+
+            # -- midea_ac_lan integration (wuwentao fork) -----------------
+            # The georgezhao2010 fork is unmaintained (last release Oct 2023) and crashes
+            # at HA shutdown with "Event loop is closed", causing exit code 100 + restart
+            # loop. wuwentao's fork is the actively maintained successor.
+            MIDEA_MARKER=/config/custom_components/midea_ac_lan/.version
+            if [ ! -f "$MIDEA_MARKER" ] || [ "$(cat "$MIDEA_MARKER")" != "$MIDEA_AC_LAN_VERSION" ]; then
+              echo "Installing midea_ac_lan ${MIDEA_AC_LAN_VERSION}..."
+              wget -qO /tmp/midea.zip "https://github.com/wuwentao/midea_ac_lan/releases/download/${MIDEA_AC_LAN_VERSION}/midea_ac_lan.zip"
+              rm -rf /config/custom_components/midea_ac_lan
+              mkdir -p /config/custom_components/midea_ac_lan
+              unzip -o /tmp/midea.zip -d /config/custom_components/midea_ac_lan
+              echo "$MIDEA_AC_LAN_VERSION" > "$MIDEA_MARKER"
+              echo "midea_ac_lan ${MIDEA_AC_LAN_VERSION} installed"
+            else
+              echo "midea_ac_lan ${MIDEA_AC_LAN_VERSION} already installed"
+            fi
+
+            # -- iphonedetect integration ---------------------------------
+            # Detects iPhones via mDNS even in deep sleep - MAC-independent (tracks by IP).
+            # After this installs and HA restarts: Settings > Devices & Services > Add Integration
+            # > "iPhone Device Tracker" > enter IP (static IP set on Eirill's phone) + name.
+            IPHONEDETECT_MARKER=/config/custom_components/iphonedetect/.version
+            if [ ! -f "$IPHONEDETECT_MARKER" ] || [ "$(cat "$IPHONEDETECT_MARKER")" != "$IPHONEDETECT_VERSION" ]; then
+              echo "Installing iphonedetect ${IPHONEDETECT_VERSION}..."
+              wget -qO /tmp/iphonedetect.zip "https://github.com/mudape/iphonedetect/releases/download/${IPHONEDETECT_VERSION}/iphonedetect.zip"
+              rm -rf /config/custom_components/iphonedetect
+              mkdir -p /config/custom_components/iphonedetect
+              unzip -o /tmp/iphonedetect.zip -d /config/custom_components/iphonedetect
+              echo "$IPHONEDETECT_VERSION" > "$IPHONEDETECT_MARKER"
+              echo "iphonedetect ${IPHONEDETECT_VERSION} installed"
+            else
+              echo "iphonedetect ${IPHONEDETECT_VERSION} already installed"
+            fi
+
+            # -- Frontend cards -------------------------------------------
+            mkdir -p /config/www
+
+            install_card() {
+              local name=$1 url=$2 filename=$3 version=$4
+              local dest="/config/www/${filename}"
+              local marker="/config/www/.${name}-version"
+
+              if [ -f "$marker" ] && [ "$(cat "$marker")" = "$version" ]; then
+                echo "${name} ${version} already installed"
+                return 0
+              fi
+
+              echo "Installing ${name} ${version}..."
+              wget -qO "$dest" "$url"
+              echo "$version" > "$marker"
+              echo "${name} ${version} installed"
+            }
+
+            install_card "mushroom" \
+              "https://github.com/piitaya/lovelace-mushroom/releases/download/${MUSHROOM_VERSION}/mushroom.js" \
+              "mushroom.js" "$MUSHROOM_VERSION"
+
+            install_card "bubble-card" \
+              "https://raw.githubusercontent.com/Clooos/Bubble-Card/${BUBBLE_VERSION}/dist/bubble-card.js" \
+              "bubble-card.js" "$BUBBLE_VERSION"
+
+            install_card "card-mod" \
+              "https://raw.githubusercontent.com/thomasloven/lovelace-card-mod/${CARD_MOD_VERSION}/card-mod.js" \
+              "card-mod.js" "$CARD_MOD_VERSION"
+
+            install_card "vertical-stack-in-card" \
+              "https://github.com/ofekashery/vertical-stack-in-card/releases/download/${VSTACK_VERSION}/vertical-stack-in-card.js" \
+              "vertical-stack-in-card.js" "$VSTACK_VERSION"
+
+            install_card "streamline-card" \
+              "https://github.com/brunosabot/streamline-card/releases/download/${STREAMLINE_VERSION}/streamline-card.js" \
+              "streamline-card.js" "$STREAMLINE_VERSION"
+
+            install_card "hue-like-light-card" \
+              "https://github.com/Gh61/lovelace-hue-like-light-card/releases/download/${HUE_LIGHT_VERSION}/hue-like-light-card.js" \
+              "hue-like-light-card.js" "$HUE_LIGHT_VERSION"
+
+            # -- Register lovelace resources ------------------------------
+            # Only write if the file doesn't exist or is missing our resources
+            RESOURCES_FILE="/config/.storage/lovelace_resources"
+            if [ ! -f "$RESOURCES_FILE" ]; then
+              echo "Registering frontend resources..."
+              cat > "$RESOURCES_FILE" << 'RESEOF'
+            {
+              "version": 1,
+              "minor_version": 1,
+              "key": "lovelace_resources",
+              "data": {
+                "items": [
+                  {
+                    "id": "mushroom",
+                    "type": "module",
+                    "url": "/local/mushroom.js"
+                  },
+                  {
+                    "id": "bubble-card",
+                    "type": "module",
+                    "url": "/local/bubble-card.js"
+                  },
+                  {
+                    "id": "card-mod",
+                    "type": "module",
+                    "url": "/local/card-mod.js"
+                  },
+                  {
+                    "id": "vertical-stack-in-card",
+                    "type": "module",
+                    "url": "/local/vertical-stack-in-card.js"
+                  },
+                  {
+                    "id": "streamline-card",
+                    "type": "module",
+                    "url": "/local/streamline-card.js"
+                  },
+                  {
+                    "id": "hue-like-light-card",
+                    "type": "module",
+                    "url": "/local/hue-like-light-card.js"
+                  }
+                ]
+              }
+            }
+            RESEOF
+              echo "Lovelace resources registered"
+            else
+              echo "Lovelace resources already registered"
+            fi
+
+            # -- Write combined marker ------------------------------------
+            echo "$EXPECTED" > "$MARKER"
+            echo "All components installed successfully"
+          volumeMounts:
+          - name: home-assistant-pvc
+            mountPath: /config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: home-assistant
@@ -94,5 +308,5 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true
