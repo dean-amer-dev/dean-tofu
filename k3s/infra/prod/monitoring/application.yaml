@@ -24,6 +24,17 @@ spec:
         prometheus-node-exporter:
           tolerations:
           - operator: Exists
+          prometheus:
+            monitor:
+              relabelings:
+              - sourceLabels: [__meta_kubernetes_pod_node_name]
+                targetLabel: node
+              - sourceLabels: [__meta_kubernetes_pod_node_name]
+                targetLabel: instance
+              - sourceLabels: [__meta_kubernetes_pod_node_name]
+                regex: (murderbot|archlinux)
+                targetLabel: job
+                replacement: $1-node
         prometheus:
           ingress:
             enabled: true
