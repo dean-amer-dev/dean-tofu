@@ -56,9 +56,3 @@ resource "kubectl_manifest" "application" {
   depends_on = [module.db]
   yaml_body  = file("${path.module}/application.yaml")
 }
-
-# Temporary Phase 3 check, removed from the code once the recorder schema is confirmed.
-resource "kubectl_manifest" "verify" {
-  depends_on = [kubectl_manifest.application]
-  yaml_body  = file("${path.module}/verify.yaml")
-}

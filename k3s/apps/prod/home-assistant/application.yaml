@@ -15,9 +15,9 @@ spec:
           tag: "2026.7.0"
         replicaCount: 1
         controller:
-          type: StatefulSet
-        podReplacementPolicy: Always
-        statefulSetAnnotations:
+          type: Deployment
+        deploymentStrategy: Recreate
+        deploymentAnnotations:
           reloader.stakater.com/auto: "true"
         commonLabels:
           infra2.amer.dev/single-replica-exempt: "true"
