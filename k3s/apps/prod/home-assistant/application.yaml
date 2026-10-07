@@ -11,6 +11,7 @@ spec:
     targetRevision: 0.3.70
     helm:
       values: |
+        fullnameOverride: home-assistant-r2
         image:
           tag: 2026.7.0
         replicaCount: 1
@@ -46,6 +47,8 @@ spec:
             memory: 1Gi
           limits:
             memory: 3Gi
+        livenessProbe:
+          failureThreshold: 30
         startupProbe:
           httpGet:
             path: /
@@ -60,19 +63,14 @@ spec:
             http:
               use_x_forwarded_for: true
               trusted_proxies:
-                - 10.0.0.0/8
-                - 172.16.0.0/12
-                - 192.168.0.0/16
-                - 127.0.0.0/8
+                - 10.44.0.0/16
+                - 10.45.0.0/16
+                - 10.100.20.0/24
+                - 127.0.0.1
             recorder:
               db_url: !env_var HA_DB_URL
               purge_keep_days: 14
               auto_purge: true
-            frontend:
-              themes: !include_dir_merge_named themes
-            automation: !include automations.yaml
-            script: !include scripts.yaml
-            scene: !include scenes.yaml
         ingress:
           enabled: true
           className: cilium
@@ -241,6 +239,7 @@ spec:
             # Only write if the file doesn't exist or is missing our resources
             RESOURCES_FILE="/config/.storage/lovelace_resources"
             if [ ! -f "$RESOURCES_FILE" ]; then
+              mkdir -p /config/.storage
               echo "Registering frontend resources..."
               cat > "$RESOURCES_FILE" << 'RESEOF'
             {
@@ -292,7 +291,7 @@ spec:
             echo "$EXPECTED" > "$MARKER"
             echo "All components installed successfully"
           volumeMounts:
-          - name: home-assistant-pvc
+          - name: home-assistant-r2-pvc
             mountPath: /config
           resources:
             requests:
