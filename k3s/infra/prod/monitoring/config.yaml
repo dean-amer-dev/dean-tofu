@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: grafana-admin
+            namespace: monitoring
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: grafana-admin
+              creationPolicy: Owner
+              deletionPolicy: Retain
+              template:
+                engineVersion: v2
+                data:
+                  admin-user: admin
+                  admin-password: "{{ .password }}"
+            data:
+            - secretKey: password
+              remoteRef:
+                key: 9a2f2c00-0cc9-4aac-91da-b43d00f980d1
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
