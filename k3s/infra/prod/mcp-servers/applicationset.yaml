@@ -961,6 +961,23 @@ spec:
                   - get
                   - list
                   - watch
+                - apiGroups:
+                  - postgresql.cnpg.io
+                  resources:
+                  - '*'
+                  verbs:
+                  - get
+                  - list
+                  - watch
+                - apiGroups:
+                  - storage.k8s.io
+                  resources:
+                  - storageclasses
+                  - csidrivers
+                  verbs:
+                  - get
+                  - list
+                  - watch
               - apiVersion: rbac.authorization.k8s.io/v1
                 kind: ClusterRoleBinding
                 metadata:
