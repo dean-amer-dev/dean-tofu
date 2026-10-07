@@ -1,0 +1,185 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.1.0
+    helm:
+      values: |
+        defaultRules:
+          create: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        prometheus-node-exporter:
+          tolerations:
+          - operator: Exists
+        prometheus:
+          ingress:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: prom-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+            hosts:
+            - prom-k3s.amer.dev
+            paths:
+            - /
+            pathType: Prefix
+            tls:
+            - secretName: prom-k3s-amer-dev-tls
+              hosts:
+              - prom-k3s.amer.dev
+          prometheusSpec:
+            replicas: 1
+            scrapeInterval: 30s
+            evaluationInterval: 30s
+            retention: 30d
+            retentionSize: 30GB
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests:
+                cpu: "1"
+                memory: 3Gi
+              limits:
+                memory: 6Gi
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: Exists
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn-no-backup
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 40Gi
+        alertmanager:
+          ingress:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: alertmanager-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+            hosts:
+            - alertmanager-k3s.amer.dev
+            paths:
+            - /
+            pathType: Prefix
+            tls:
+            - secretName: alertmanager-k3s-amer-dev-tls
+              hosts:
+              - alertmanager-k3s.amer.dev
+          alertmanagerSpec:
+            replicas: 1
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: Exists
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn-no-backup
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 2Gi
+        grafana:
+          replicas: 1
+          defaultDashboardsEnabled: false
+          annotations:
+            reloader.stakater.com/auto: "true"
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          persistence:
+            enabled: false
+          envValueFrom:
+            GF_DB_HOST:
+              secretKeyRef:
+                name: grafana-postgres
+                key: host
+            GF_DB_PORT:
+              secretKeyRef:
+                name: grafana-postgres
+                key: port
+            GF_DATABASE_NAME:
+              secretKeyRef:
+                name: grafana-postgres
+                key: dbname
+            GF_DATABASE_USER:
+              secretKeyRef:
+                name: grafana-postgres
+                key: username
+            GF_DATABASE_PASSWORD:
+              secretKeyRef:
+                name: grafana-postgres
+                key: password
+          env:
+            GF_DATABASE_TYPE: postgres
+            GF_DATABASE_HOST: "$(GF_DB_HOST):$(GF_DB_PORT)"
+          grafana.ini:
+            server:
+              root_url: https://grafana.amer.dev
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              folderAnnotation: grafana_folder
+              provider:
+                foldersFromFilesStructure: true
+          ingress:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: grafana-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+            hosts:
+            - grafana-k3s.amer.dev
+            path: /
+            tls:
+            - secretName: grafana-k3s-amer-dev-tls
+              hosts:
+              - grafana-k3s.amer.dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
