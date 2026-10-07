@@ -38,6 +38,7 @@ spec:
             - prom-k3s.amer.dev
             paths:
             - /
+            pathType: Prefix
             tls:
             - secretName: prom-k3s-amer-dev-tls
               hosts:
@@ -88,6 +89,7 @@ spec:
             - alertmanager-k3s.amer.dev
             paths:
             - /
+            pathType: Prefix
             tls:
             - secretName: alertmanager-k3s-amer-dev-tls
               hosts:
