@@ -126,6 +126,8 @@ spec:
                 - crd
               policy: sync
               interval: 5m
+              extraArgs:
+                - --events
               txtOwnerId: "external-dns-do"
               txtPrefix: "do-"
               logLevel: info
