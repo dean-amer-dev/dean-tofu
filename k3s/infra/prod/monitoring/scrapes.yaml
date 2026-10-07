@@ -1,0 +1,659 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-scrapes
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-media
+            namespace: monitoring
+          spec:
+            jobName: https-probes-media
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: &id001
+              url: blackbox-exporter.monitoring.svc:9115
+              path: /probe
+            targets:
+              staticConfig:
+                static:
+                - media.amer.dev
+                labels:
+                  stack: web-services
+                  service: jellyfin
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-komodo
+            namespace: monitoring
+          spec:
+            jobName: https-probes-komodo
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - komodo.amer.dev
+                labels:
+                  stack: web-services
+                  service: komodo
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-argo
+            namespace: monitoring
+          spec:
+            jobName: https-probes-argo
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - argo.amer.dev
+                labels:
+                  stack: web-services
+                  service: argo-workflows
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-argocd
+            namespace: monitoring
+          spec:
+            jobName: https-probes-argocd
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - argocd.amer.dev
+                labels:
+                  stack: web-services
+                  service: argocd
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-grafana
+            namespace: monitoring
+          spec:
+            jobName: https-probes-grafana
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - grafana.amer.dev
+                labels:
+                  stack: web-services
+                  service: grafana
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-z2m
+            namespace: monitoring
+          spec:
+            jobName: https-probes-z2m
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - z2m-dean-1.amer.dev
+                labels:
+                  stack: web-services
+                  service: zigbee2mqtt
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-litellm
+            namespace: monitoring
+          spec:
+            jobName: https-probes-litellm
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - litellm.amer.dev/health/readiness
+                labels:
+                  stack: llm
+                  service: litellm
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-owui
+            namespace: monitoring
+          spec:
+            jobName: https-probes-owui
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - zoidberg.amer.dev
+                labels:
+                  stack: llm
+                  service: openwebui
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-mem0
+            namespace: monitoring
+          spec:
+            jobName: https-probes-mem0
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - mem0.amer.dev
+                labels:
+                  stack: llm
+                  service: mem0
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: https-probes-couchdb
+            namespace: monitoring
+          spec:
+            jobName: https-probes-couchdb
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - couchdb.amer.dev
+                labels:
+                  stack: db
+                  service: couchdb
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: tcp-probes-qdrant
+            namespace: monitoring
+          spec:
+            jobName: tcp-probes-qdrant
+            interval: 30s
+            scrapeTimeout: 15s
+            module: tcp_connect
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.18:6333
+                labels:
+                  stack: db
+                  service: qdrant
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: tcp-probes-libsync-redis
+            namespace: monitoring
+          spec:
+            jobName: tcp-probes-libsync-redis
+            interval: 30s
+            scrapeTimeout: 15s
+            module: tcp_connect
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.18:6379
+                labels:
+                  stack: db
+                  service: libsync-redis
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: http-probe-ollama-mini
+            namespace: monitoring
+          spec:
+            jobName: http-probe-ollama-mini
+            interval: 30s
+            scrapeTimeout: 15s
+            module: http_2xx
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.18:11434
+                labels:
+                  stack: llm
+                  service: ollama-mini
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: dns-resolution-probe
+            namespace: monitoring
+          spec:
+            jobName: dns-resolution-probe
+            interval: 30s
+            scrapeTimeout: 15s
+            module: dns_technitium
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.240:53
+                labels:
+                  service: technitium
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: dns-adblock-probe
+            namespace: monitoring
+          spec:
+            jobName: dns-adblock-probe
+            interval: 30s
+            scrapeTimeout: 15s
+            module: dns_technitium_adblock
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.240:53
+                labels:
+                  service: technitium-adblock
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: tcp-probe-gmktec-lb-vips
+            namespace: monitoring
+          spec:
+            jobName: tcp-probe-gmktec-lb-vips
+            interval: 30s
+            scrapeTimeout: 15s
+            module: tcp_connect
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.171:443
+                labels:
+                  service: gmktec-cilium-ingress-vip
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: tcp-probe-gmktec-argocd-vip
+            namespace: monitoring
+          spec:
+            jobName: tcp-probe-gmktec-lb-vips
+            interval: 30s
+            scrapeTimeout: 15s
+            module: tcp_connect
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.170:443
+                labels:
+                  service: gmktec-argocd-vip
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: icmp-probe-gmktec-nodes
+            namespace: monitoring
+          spec:
+            jobName: icmp-probe-gmktec-nodes
+            interval: 30s
+            scrapeTimeout: 15s
+            module: icmp
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.20
+                - 10.100.20.21
+                - 10.100.20.22
+                relabelingConfigs:
+                - action: replace
+                  sourceLabels:
+                  - __param_target
+                  regex: 10.100.20.20
+                  targetLabel: node
+                  replacement: gmktec-1
+                - action: replace
+                  sourceLabels:
+                  - __param_target
+                  regex: 10.100.20.21
+                  targetLabel: node
+                  replacement: gmktec-2
+                - action: replace
+                  sourceLabels:
+                  - __param_target
+                  regex: 10.100.20.22
+                  targetLabel: node
+                  replacement: gmktec-3
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
+            name: icmp-probe-k3s-nodes
+            namespace: monitoring
+          spec:
+            jobName: icmp-probe-k3s-nodes
+            interval: 30s
+            scrapeTimeout: 15s
+            module: icmp
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.19
+                labels:
+                  node: murderbot
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: ha-prometheus-token
+            namespace: monitoring
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: ha-prometheus-token
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: token
+              remoteRef:
+                key: c7ccdb87-b04e-428e-bbcf-b4340156edf6
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: ScrapeConfig
+          metadata:
+            name: mac-mini-homeassistant
+            namespace: monitoring
+          spec:
+            jobName: mac-mini-homeassistant
+            scrapeInterval: 30s
+            staticConfigs:
+            - targets:
+              - ha.amer.dev
+            scheme: HTTPS
+            metricsPath: /api/prometheus
+            authorization:
+              credentials:
+                name: ha-prometheus-token
+                key: token
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: ScrapeConfig
+          metadata:
+            name: mac-mini-node
+            namespace: monitoring
+          spec:
+            jobName: mac-mini-node
+            scrapeInterval: 30s
+            staticConfigs:
+            - targets:
+              - 10.100.20.18:9100
+              labels:
+                node: mac-mini-m4
+            relabelings:
+            - action: replace
+              targetLabel: instance
+              replacement: mac-mini-m4
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: ScrapeConfig
+          metadata:
+            name: murderbot-nvidia
+            namespace: monitoring
+          spec:
+            jobName: murderbot-nvidia
+            scrapeInterval: 30s
+            staticConfigs:
+            - targets:
+              - 10.100.20.19:9101
+              labels:
+                node: murderbot
+        - apiVersion: monitoring.coreos.com/v1alpha1
+          kind: ScrapeConfig
+          metadata:
+            name: archlinux-amd-gpu
+            namespace: monitoring
+          spec:
+            jobName: archlinux-amd-gpu
+            scrapeInterval: 30s
+            staticConfigs:
+            - targets:
+              - 10.100.20.25:9101
+              labels:
+                node: archlinux
+            relabelings:
+            - action: replace
+              targetLabel: instance
+              replacement: archlinux
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: cert-manager
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - app-of-apps
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - cert-manager
+                - cainjector
+                - webhook
+            podMetricsEndpoints:
+            - port: http-metrics
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: external-secrets
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - app-of-apps
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - external-secrets
+                - external-secrets-cert-controller
+                - external-secrets-webhook
+            podMetricsEndpoints:
+            - port: metrics
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: external-dns
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - app-of-apps
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - external-dns
+            podMetricsEndpoints:
+            - port: http
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: reloader
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - app-of-apps
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - reloader
+            podMetricsEndpoints:
+            - port: http
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: argocd
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - argocd
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - argocd-application-controller
+                - argocd-applicationset-controller
+                - argocd-repo-server
+                - argocd-server
+            podMetricsEndpoints:
+            - port: metrics
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: argo-workflows
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - argo-workflows
+            selector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - argo-workflows-workflow-controller
+            podMetricsEndpoints:
+            - port: metrics
+              path: /metrics
+              scheme: https
+              tlsConfig:
+                insecureSkipVerify: true
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: longhorn-manager
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - longhorn-system
+            selector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - longhorn-manager
+            podMetricsEndpoints:
+            - port: manager
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: cilium-operator
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - kube-system
+            selector:
+              matchExpressions:
+              - key: io.cilium/app
+                operator: In
+                values:
+                - operator
+            podMetricsEndpoints:
+            - port: prometheus
+              path: /metrics
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PodMonitor
+          metadata:
+            name: cilium-envoy
+            namespace: monitoring
+          spec:
+            namespaceSelector:
+              matchNames:
+              - kube-system
+            selector:
+              matchExpressions:
+              - key: k8s-app
+                operator: In
+                values:
+                - cilium-envoy
+            podMetricsEndpoints:
+            - port: envoy-metrics
+              path: /metrics
+        - apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: allow-prometheus-metrics
+            namespace: longhorn-system
+          spec:
+            podSelector:
+              matchLabels:
+                app: longhorn-manager
+            policyTypes:
+            - Ingress
+            ingress:
+            - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: prometheus
+              ports:
+              - protocol: TCP
+                port: 9500
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true

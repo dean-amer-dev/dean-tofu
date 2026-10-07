@@ -62,3 +62,13 @@ resource "kubectl_manifest" "application" {
   depends_on = [module.db, kubectl_manifest.config]
   yaml_body  = file("${path.module}/application.yaml")
 }
+
+resource "kubectl_manifest" "blackbox" {
+  depends_on = [kubectl_manifest.application]
+  yaml_body  = file("${path.module}/blackbox.yaml")
+}
+
+resource "kubectl_manifest" "scrapes" {
+  depends_on = [kubectl_manifest.blackbox]
+  yaml_body  = file("${path.module}/scrapes.yaml")
+}
