@@ -53,6 +53,11 @@ module "db" {
 }
 
 resource "kubectl_manifest" "application" {
-  depends_on = [module.db]
+  depends_on = [module.db, kubectl_manifest.extras]
   yaml_body  = file("${path.module}/application.yaml")
+}
+
+resource "kubectl_manifest" "extras" {
+  depends_on = [kubectl_manifest.namespace]
+  yaml_body  = file("${path.module}/extras.yaml")
 }
