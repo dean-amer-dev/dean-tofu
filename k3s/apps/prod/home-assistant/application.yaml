@@ -11,7 +11,7 @@ spec:
     targetRevision: 0.3.70
     helm:
       values: |
-        fullnameOverride: home-assistant-r2
+        fullnameOverride: home-assistant-r3
         image:
           tag: 2026.7.0
         replicaCount: 1
@@ -76,19 +76,19 @@ spec:
           className: cilium
           annotations:
             cert-manager.io/cluster-issuer: letsencrypt-prod
-            external-dns.alpha.kubernetes.io/hostname: ha-new.amer.dev
+            external-dns.alpha.kubernetes.io/hostname: ha.amer.dev
             external-dns.alpha.kubernetes.io/ttl: '300'
             ingress.cilium.io/loadbalancer-mode: dedicated
             lbipam.cilium.io/sharing-key: external-ingress-private
           hosts:
-          - host: ha-new.amer.dev
+          - host: ha.amer.dev
             paths:
             - path: /
               pathType: Prefix
           tls:
-          - secretName: ha-new-amer-dev-tls
+          - secretName: ha-amer-dev-tls
             hosts:
-            - ha-new.amer.dev
+            - ha.amer.dev
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -291,7 +291,7 @@ spec:
             echo "$EXPECTED" > "$MARKER"
             echo "All components installed successfully"
           volumeMounts:
-          - name: home-assistant-r2-pvc
+          - name: home-assistant-r3-pvc
             mountPath: /config
           resources:
             requests:
