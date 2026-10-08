@@ -116,6 +116,9 @@ spec:
                 labels:
                   app: zigbee2mqtt
               spec:
+                tolerations:
+                - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
+                - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
                 initContainers:
                 - name: seed
                   image: busybox:1.37.0
