@@ -67,6 +67,33 @@ spec:
               app: zigbee2mqtt
             ports:
             - {name: frontend, port: 8099, protocol: TCP, targetPort: 8099}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: zigbee2mqtt-ingress-amer-dev
+            namespace: zigbee2mqtt
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: z2m-dean-1.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+          spec:
+            tls:
+            - hosts:
+              - z2m-dean-1.amer.dev
+              secretName: z2m-dean-1-amer-dev-tls
+            rules:
+            - host: z2m-dean-1.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: zigbee2mqtt
+                      port:
+                        number: 8099
         - apiVersion: apps/v1
           kind: Deployment
           metadata:
