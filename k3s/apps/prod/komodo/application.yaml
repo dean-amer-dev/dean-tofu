@@ -83,20 +83,43 @@ spec:
             namespace: komodo
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
-              external-dns.alpha.kubernetes.io/hostname: komodo-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/hostname: komodo.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
               ingress.cilium.io/loadbalancer-mode: dedicated
               lbipam.cilium.io/sharing-key: external-ingress-private
           spec:
             tls:
             - hosts:
-              - komodo-k3s.amer.dev
-              secretName: komodo-k3s-amer-dev-tls
+              - komodo.amer.dev
+              secretName: komodo-amer-dev-tls
             rules:
-            - host: komodo-k3s.amer.dev
+            - host: komodo.amer.dev
               http:
                 paths:
                 - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: komodo
+                      port:
+                        number: 9120
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: pubhooks-github-ingress-amer-dev
+            namespace: komodo
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+          spec:
+            tls:
+            - hosts:
+              - pubhooks.amer.dev
+              secretName: pubhooks-amer-dev-tls
+            rules:
+            - host: pubhooks.amer.dev
+              http:
+                paths:
+                - path: /listener/github/
                   pathType: Prefix
                   backend:
                     service:
@@ -116,7 +139,10 @@ spec:
           spec:
             replicas: 1
             strategy:
-              type: Recreate
+              type: RollingUpdate
+              rollingUpdate:
+                maxSurge: 1
+                maxUnavailable: 0
             selector:
               matchLabels:
                 app: komodo
@@ -142,7 +168,7 @@ spec:
                   - {name: KOMODO_WEBHOOK_SECRET_FILE, value: /komodo-secrets/webhook-secret}
                   - {name: KOMODO_JWT_SECRET_FILE, value: /komodo-secrets/jwt-secret}
                   - {name: TZ, value: America/New_York}
-                  - {name: KOMODO_HOST, value: "https://komodo-k3s.amer.dev"}
+                  - {name: KOMODO_HOST, value: "https://komodo.amer.dev"}
                   - {name: KOMODO_TITLE, value: Komodo}
                   - {name: KOMODO_DISABLE_CONFIRM_DIALOG, value: "false"}
                   - {name: KOMODO_MONITORING_INTERVAL, value: 15-sec}
