@@ -1,0 +1,202 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: komodo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: komodo-mongodb-password
+            namespace: komodo
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: komodo-mongodb-password
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: password
+              remoteRef:
+                key: komodo-k3s-mongodb-password
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: komodo-secrets
+            namespace: komodo
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: komodo-secrets
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: passkey
+              remoteRef:
+                key: komodo-dean-passkey
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: webhook-secret
+              remoteRef:
+                key: komodo-dean-webhook-secret
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: jwt-secret
+              remoteRef:
+                key: komodo-dean-jwt-secret
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: komodo
+            namespace: komodo
+          spec:
+            selector:
+              app: komodo
+            ports:
+            - {name: http, port: 9120, protocol: TCP, targetPort: 9120}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: komodo-ingress-amer-dev
+            namespace: komodo
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: komodo-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+          spec:
+            tls:
+            - hosts:
+              - komodo-k3s.amer.dev
+              secretName: komodo-k3s-amer-dev-tls
+            rules:
+            - host: komodo-k3s.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: komodo
+                      port:
+                        number: 9120
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: komodo
+            namespace: komodo
+            labels:
+              app: komodo
+              infra2.amer.dev/single-replica-exempt: "true"
+            annotations:
+              reloader.stakater.com/auto: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: komodo
+            template:
+              metadata:
+                labels:
+                  app: komodo
+              spec:
+                automountServiceAccountToken: false
+                enableServiceLinks: false
+                containers:
+                - name: komodo
+                  image: ghcr.io/moghtech/komodo-core:2.1.2
+                  ports:
+                  - {name: http, containerPort: 9120}
+                  env:
+                  - name: MONGO_PASS
+                    valueFrom:
+                      secretKeyRef: {name: komodo-mongodb-password, key: password}
+                  - name: KOMODO_DATABASE_URI
+                    value: "mongodb://komodo:$(MONGO_PASS)@komodo-mongodb-0.komodo-mongodb-svc.mongodb.svc.cluster.local:27017,komodo-mongodb-1.komodo-mongodb-svc.mongodb.svc.cluster.local:27017,komodo-mongodb-2.komodo-mongodb-svc.mongodb.svc.cluster.local:27017/komodo?replicaSet=komodo-mongodb&authSource=admin"
+                  - {name: KOMODO_PASSKEY_FILE, value: /komodo-secrets/passkey}
+                  - {name: KOMODO_WEBHOOK_SECRET_FILE, value: /komodo-secrets/webhook-secret}
+                  - {name: KOMODO_JWT_SECRET_FILE, value: /komodo-secrets/jwt-secret}
+                  - {name: TZ, value: America/New_York}
+                  - {name: KOMODO_HOST, value: "https://komodo-k3s.amer.dev"}
+                  - {name: KOMODO_TITLE, value: Komodo}
+                  - {name: KOMODO_DISABLE_CONFIRM_DIALOG, value: "false"}
+                  - {name: KOMODO_MONITORING_INTERVAL, value: 15-sec}
+                  - {name: KOMODO_RESOURCE_POLL_INTERVAL, value: 5-min}
+                  - {name: KOMODO_PROMETHEUS_ENDPOINT_ENABLED, value: "true"}
+                  - {name: KOMODO_LOCAL_AUTH, value: "true"}
+                  - {name: KOMODO_DISABLE_USER_REGISTRATION, value: "true"}
+                  - {name: KOMODO_ENABLE_NEW_USERS, value: "false"}
+                  - {name: KOMODO_TRANSPARENT_MODE, value: "false"}
+                  - {name: KOMODO_GITHUB_OAUTH_ENABLED, value: "false"}
+                  - {name: KOMODO_LOGGING_PRETTY, value: "false"}
+                  - {name: KOMODO_PRETTY_STARTUP_CONFIG, value: "false"}
+                  startupProbe:
+                    tcpSocket:
+                      port: 9120
+                    periodSeconds: 5
+                    failureThreshold: 36
+                  readinessProbe:
+                    tcpSocket:
+                      port: 9120
+                    periodSeconds: 10
+                  livenessProbe:
+                    tcpSocket:
+                      port: 9120
+                    periodSeconds: 20
+                    failureThreshold: 3
+                  volumeMounts:
+                  - {name: secrets, mountPath: /komodo-secrets, readOnly: true}
+                  - {name: backups, mountPath: /backups}
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      memory: 1Gi
+                volumes:
+                - name: secrets
+                  secret:
+                    secretName: komodo-secrets
+                - name: backups
+                  emptyDir: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: komodo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
