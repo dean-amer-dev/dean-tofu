@@ -265,6 +265,7 @@ spec:
                           want=$(stat -c %s "$src")
                           got=$(rclone lsf --format s "$key")
                           [ "$want" = "$got" ] || { echo "BACKUP_FAILED size mismatch $key local=$want remote=$got" >&2; exit 1; }
+                          [ "$(rclone cat "$key" | sha256sum)" = "$(sha256sum < "$src")" ] || { echo "BACKUP_FAILED content mismatch $key" >&2; exit 1; }
                           n=$((n+1))
                         done
                         rclone delete --min-age 14d "$dest"
