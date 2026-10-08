@@ -164,6 +164,8 @@ spec:
           grafana.ini:
             server:
               root_url: https://grafana.amer.dev
+            dashboards:
+              default_home_dashboard_path: /tmp/dashboards/home.json
           sidecar:
             dashboards:
               enabled: true
