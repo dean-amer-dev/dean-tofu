@@ -1,0 +1,248 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mongodb-komodo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: komodo-mongodb-password
+            namespace: mongodb
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: komodo-mongodb-password
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: password
+              remoteRef:
+                key: komodo-k3s-mongodb-password
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: mongodbcommunity.mongodb.com/v1
+          kind: MongoDBCommunity
+          metadata:
+            name: komodo-mongodb
+            namespace: mongodb
+          spec:
+            type: ReplicaSet
+            members: 3
+            version: "8.0.32"
+            security:
+              authentication:
+                modes: ["SCRAM"]
+            users:
+            - name: komodo
+              db: admin
+              passwordSecretRef:
+                name: komodo-mongodb-password
+                key: password
+              scramCredentialsSecretName: komodo-scram
+              roles:
+              - name: dbOwner
+                db: komodo
+            statefulSet:
+              spec:
+                template:
+                  spec:
+                    affinity:
+                      podAntiAffinity:
+                        requiredDuringSchedulingIgnoredDuringExecution:
+                        - labelSelector:
+                            matchLabels:
+                              app: komodo-mongodb-svc
+                          topologyKey: kubernetes.io/hostname
+                    containers:
+                    - name: mongod
+                      resources:
+                        requests:
+                          cpu: 250m
+                          memory: 1Gi
+                        limits:
+                          memory: 1Gi
+                    - name: mongodb-agent
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 128Mi
+                        limits:
+                          memory: 256Mi
+                volumeClaimTemplates:
+                - metadata:
+                    name: data-volume
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 10Gi
+                - metadata:
+                    name: logs-volume
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 2Gi
+        - apiVersion: policy/v1
+          kind: PodDisruptionBudget
+          metadata:
+            name: komodo-mongodb
+            namespace: mongodb
+          spec:
+            maxUnavailable: 1
+            selector:
+              matchLabels:
+                app: komodo-mongodb-svc
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: mongodb-komodo-backup-gcs
+            namespace: mongodb
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: mongodb-komodo-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: mongodb-komodo-backup
+            namespace: mongodb
+          spec:
+            schedule: "30 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 2
+                template:
+                  spec:
+                    restartPolicy: OnFailure
+                    volumes:
+                    - name: dump
+                      emptyDir: {}
+                    initContainers:
+                    - name: mongodump
+                      image: mongo:8.0.32
+                      env:
+                      - name: MONGO_PASS
+                        valueFrom:
+                          secretKeyRef: {name: komodo-mongodb-password, key: password}
+                      command: ["/bin/bash", "-euo", "pipefail", "-c"]
+                      args:
+                      - |
+                        H=komodo-mongodb-0.komodo-mongodb-svc.mongodb.svc.cluster.local:27017,komodo-mongodb-1.komodo-mongodb-svc.mongodb.svc.cluster.local:27017,komodo-mongodb-2.komodo-mongodb-svc.mongodb.svc.cluster.local:27017
+                        URI="mongodb://komodo:${MONGO_PASS}@${H}/?replicaSet=komodo-mongodb&authSource=admin&readPreference=secondaryPreferred"
+                        d=/dump/$(date -u +%Y-%m-%dT%H%M%SZ)
+                        mkdir -p "$d"
+                        for db in komodo; do
+                          mongodump --quiet --uri="$URI" --db="$db" --archive="$d/$db.archive.gz" --gzip
+                          gzip -t "$d/$db.archive.gz"
+                        done
+                        ls -l "$d"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 100m, memory: 128Mi}
+                        limits: {memory: 512Mi}
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - name: RCLONE_CONFIG_GCS_TYPE
+                        value: s3
+                      - name: RCLONE_CONFIG_GCS_PROVIDER
+                        value: GCS
+                      - name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET
+                        value: "true"
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-komodo-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-komodo-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: mongodb-komodo-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/mongodb
+                        n=0
+                        up() {
+                          rclone copyto "$1" "$2"
+                          want=$(stat -c %s "$1")
+                          got=$(rclone lsf --format s "$2")
+                          [ "$want" = "$got" ] || { echo "BACKUP_FAILED size mismatch $2 local=$want remote=$got" >&2; exit 1; }
+                          n=$((n+1))
+                        }
+                        for dir in /dump/*/; do
+                          ts=$(basename "$dir")
+                          for f in "$dir"*.archive.gz; do
+                            [ -e "$f" ] || continue
+                            db=$(basename "$f" .archive.gz)
+                            up "$f" "$dest/$db/$ts-$db.archive.gz"
+                          done
+                        done
+                        [ "$n" -gt 0 ] || { echo "BACKUP_FAILED no objects uploaded to $dest" >&2; exit 1; }
+                        rclone delete --min-age 14d "$dest"
+                        echo "BACKUP_OK objects=$n dest=$dest"
+                      volumeMounts:
+                      - {name: dump, mountPath: /dump}
+                      resources:
+                        requests: {cpu: 50m, memory: 64Mi}
+                        limits: {memory: 256Mi}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mongodb
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
