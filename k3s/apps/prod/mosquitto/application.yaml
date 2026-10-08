@@ -1,0 +1,135 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosquitto
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: cilium.io/v2alpha1
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: mosquitto
+          spec:
+            blocks:
+            - cidr: 10.100.20.205/32
+            serviceSelector:
+              matchLabels:
+                io.kubernetes.service.namespace: mosquitto
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: mosquitto-config
+            namespace: mosquitto
+          data:
+            mosquitto.conf: |
+              listener 1883
+              allow_anonymous true
+              persistence true
+              persistence_location /mosquitto/data/
+        - apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: mosquitto-data
+            namespace: mosquitto
+          spec:
+            accessModes: [ReadWriteOnce]
+            storageClassName: longhorn-backup
+            resources:
+              requests:
+                storage: 1Gi
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: mosquitto
+            namespace: mosquitto
+            annotations:
+              lbipam.cilium.io/ips: 10.100.20.205
+          spec:
+            type: LoadBalancer
+            externalTrafficPolicy: Cluster
+            selector:
+              app: mosquitto
+            ports:
+            - {name: mqtt, port: 1883, protocol: TCP, targetPort: 1883}
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: mosquitto
+            namespace: mosquitto
+            labels:
+              app: mosquitto
+              infra2.amer.dev/single-replica-exempt: "true"
+            annotations:
+              reloader.stakater.com/auto: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: mosquitto
+            template:
+              metadata:
+                labels:
+                  app: mosquitto
+              spec:
+                securityContext:
+                  fsGroup: 1883
+                containers:
+                - name: mosquitto
+                  image: eclipse-mosquitto@sha256:a908c65cc8e67ec9d292ef27c2c0360dbaaee7eb1b935cdd194e67697f15dea1
+                  ports:
+                  - {name: mqtt, containerPort: 1883}
+                  startupProbe:
+                    tcpSocket:
+                      port: 1883
+                    periodSeconds: 5
+                    failureThreshold: 24
+                  readinessProbe:
+                    tcpSocket:
+                      port: 1883
+                    periodSeconds: 10
+                  livenessProbe:
+                    tcpSocket:
+                      port: 1883
+                    periodSeconds: 20
+                    failureThreshold: 3
+                  volumeMounts:
+                  - {name: data, mountPath: /mosquitto/data}
+                  - {name: config, mountPath: /mosquitto/config/mosquitto.conf, subPath: mosquitto.conf, readOnly: true}
+                  resources:
+                    requests:
+                      cpu: 20m
+                      memory: 32Mi
+                    limits:
+                      memory: 128Mi
+                volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: mosquitto-data
+                - name: config
+                  configMap:
+                    name: mosquitto-config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosquitto
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
