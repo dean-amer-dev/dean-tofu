@@ -461,7 +461,7 @@ spec:
                 name: litellm-secrets
                 namespace: litellm
               spec:
-                refreshInterval: 1h
+                refreshInterval: 15m
                 secretStoreRef:
                   name: bitwarden-secretsmanager
                   kind: ClusterSecretStore
@@ -527,6 +527,7 @@ spec:
                       app: litellm-server
                     annotations:
                       configmap.reloader.stakater.com/reload: "litellm-config,litellm-custom-hooks,litellm-migration-override,litellm-owu-refresh-hook"
+                      secret.reloader.stakater.com/reload: "litellm-secrets"
                   spec:
                     # Was hard-pinned to murderbot (kubernetes.io/hostname: murderbot) as a
                     # reactive fix for a flaky archlinux node going NotReady (#974, June
