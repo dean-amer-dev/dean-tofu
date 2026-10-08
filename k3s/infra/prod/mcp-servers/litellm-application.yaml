@@ -184,18 +184,32 @@ spec:
                         max_output_tokens: 4096
                         supports_function_calling: true
 
-                    # --- embeddings (nomic-embed-text via mac-mini Ollama for mem0) ---
-                    # mem0 uses this for vector search. Requires nomic-embed-text pulled on mac-mini:
-                    #   curl -X POST http://10.100.20.18:11434/api/pull -d '{"name":"nomic-embed-text"}'
+                    # --- mac-mini M4 (LLMKube Metal agent, oMLX/MLX) ---
+                    # Served through the in-cluster relay Services in ns llm; model ids are the oMLX
+                    # directory names. Embeddings are 768-dim (mem0's vector(768) column).
                     - model_name: nomic-embed-text
                       litellm_params:
-                        model: ollama/nomic-embed-text
-                        api_base: http://10.100.20.18:11434
+                        model: openai/nomicai-modernbert-embed-base-8bit
+                        api_base: http://modernbert-embed-mini.llm.svc.cluster.local:8080/v1
                         api_key: none
                       model_info:
                         mode: embedding
                         max_input_tokens: 8192
                         output_vector_size: 768
+
+                    - model_name: mini-qwen35-9b
+                      litellm_params:
+                        model: openai/Qwen3.5-9B-MLX-4bit
+                        api_base: http://qwen35-9b-mini.llm.svc.cluster.local:8080/v1
+                        api_key: none
+                        timeout: 300
+                        extra_body:
+                          chat_template_kwargs:
+                            enable_thinking: false
+                      model_info:
+                        max_input_tokens: 16384
+                        max_output_tokens: 4096
+                        supports_function_calling: true
 
                     # image-gen model_list entry dropped here (2026-09-29 gmktec port): pointed at
                     # imggen-server.imggen.svc.cluster.local, an in-cluster Service on the dead

@@ -233,10 +233,10 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
-            name: http-probe-ollama-mini
+            name: http-probe-llmkube-metal-agent-mini
             namespace: monitoring
           spec:
-            jobName: http-probe-ollama-mini
+            jobName: http-probe-llmkube-metal-agent-mini
             interval: 30s
             scrapeTimeout: 15s
             module: http_2xx
@@ -244,10 +244,10 @@ spec:
             targets:
               staticConfig:
                 static:
-                - 10.100.20.18:11434
+                - 10.100.20.18:9090/healthz
                 labels:
                   stack: llm
-                  service: ollama-mini
+                  service: llmkube-metal-agent-mini
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:

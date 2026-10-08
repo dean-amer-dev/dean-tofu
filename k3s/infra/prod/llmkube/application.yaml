@@ -27,6 +27,9 @@ spec:
           mode: perService
           storageClass: murderbot-local
           size: 80Gi
+        modelSource:
+          allowedHostPathRoots:
+            - /Users/alex/.omlx/models
         webhook:
           certManager:
             enabled: true
