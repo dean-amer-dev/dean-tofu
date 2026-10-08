@@ -30,11 +30,84 @@ spec:
                 engineVersion: v2
                 data:
                   admin-user: admin
-                  admin-password: "{{ .password }}"
+                  admin-password: '{{ .password }}'
             data:
             - secretKey: password
               remoteRef:
                 key: 9a2f2c00-0cc9-4aac-91da-b43d00f980d1
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: alertmanager-config
+            namespace: monitoring
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: alertmanager-config
+              creationPolicy: Owner
+              deletionPolicy: Retain
+              template:
+                engineVersion: v2
+                data:
+                  alertmanager.yaml: |
+                    global:
+                      resolve_timeout: 5m
+
+                    route:
+                      receiver: 'pushover'
+                      group_by: ['alertname', 'stack']
+                      group_wait: 30s
+                      group_interval: 5m
+                      repeat_interval: 6h
+                      routes:
+                        - matchers:
+                            - alertname =~ "DiskSpace.*"
+                          receiver: 'pushover-disk'
+                          repeat_interval: 24h
+                        - matchers:
+                            - alertname =~ "MurderbotSwapNearlyExhausted|MurderbotIowaitCritical|MurderbotMemoryLow"
+                          receiver: 'grafana-only'
+
+                    receivers:
+                      - name: 'grafana-only'
+                      - name: 'pushover'
+                        pushover_configs:
+                          - user_key: '{{ .user_key }}'
+                            token: '{{ .token }}'
+                            title: '[{{ `{{ .Status | toUpper }}` }}] {{ `{{ .CommonLabels.alertname }}` }} ({{ `{{ .CommonLabels.severity }}` }}){{ `{{ if gt (len .Alerts) 1 }}` }} x{{ `{{ len .Alerts }}` }}{{ `{{ end }}` }}'
+                            message: |-
+                              {{ `{{ range .Alerts }}` }}{{ `{{ .Annotations.summary }}` }}
+                              {{ `{{ end }}` }}
+                            url: 'https://alertmanager.amer.dev'
+                            priority: '0'
+                            send_resolved: true
+                      - name: 'pushover-disk'
+                        pushover_configs:
+                          - user_key: '{{ .user_key }}'
+                            token: '{{ .token }}'
+                            title: '[{{ `{{ .Status | toUpper }}` }}] {{ `{{ .CommonLabels.alertname }}` }} ({{ `{{ .CommonLabels.severity }}` }}){{ `{{ if gt (len .Alerts) 1 }}` }} x{{ `{{ len .Alerts }}` }}{{ `{{ end }}` }}'
+                            message: |-
+                              {{ `{{ range .Alerts }}` }}{{ `{{ .Annotations.summary }}` }}
+                              {{ `{{ end }}` }}
+                            url: 'https://grafana.amer.dev/d/infra-node-exporter/infra3a-node-exporter?var-instance={{ `{{ (index .Alerts 0).Labels.instance }}` }}'
+                            priority: '0'
+                            send_resolved: true
+            data:
+            - secretKey: user_key
+              remoteRef:
+                key: 16d79345-5721-4173-9e14-b49a00ce1cb3
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: token
+              remoteRef:
+                key: 45c01263-f879-4cb7-ad01-b49a00d0b2d0
                 conversionStrategy: Default
                 decodingStrategy: None
                 metadataPolicy: None

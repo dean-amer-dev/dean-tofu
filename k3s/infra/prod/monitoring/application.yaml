@@ -110,6 +110,7 @@ spec:
               - alertmanager-k3s.amer.dev
           alertmanagerSpec:
             replicas: 1
+            configSecret: alertmanager-config
             affinity:
               nodeAffinity:
                 requiredDuringSchedulingIgnoredDuringExecution:
