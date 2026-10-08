@@ -121,6 +121,44 @@ spec:
                 - "1"
                 - --device-state-slots
                 - "0"
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: Model
+            metadata:
+              name: qwen35-9b-mlx
+              namespace: llm
+            spec:
+              source: /Users/alex/.omlx/models/mlx-community/Qwen3.5-9B-MLX-4bit
+              format: mlx
+              hardware:
+                accelerator: metal
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: InferenceService
+            metadata:
+              name: qwen35-9b-mini
+              namespace: llm
+            spec:
+              modelRef: qwen35-9b-mlx
+              runtime: omlx
+              replicas: 1
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: Model
+            metadata:
+              name: modernbert-embed-mlx
+              namespace: llm
+            spec:
+              source: /Users/alex/.omlx/models/mlx-community/nomicai-modernbert-embed-base-8bit
+              format: mlx
+              hardware:
+                accelerator: metal
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: InferenceService
+            metadata:
+              name: modernbert-embed-mini
+              namespace: llm
+            spec:
+              modelRef: modernbert-embed-mlx
+              runtime: omlx
+              replicas: 1
   destination:
     server: https://kubernetes.default.svc
     namespace: llm
