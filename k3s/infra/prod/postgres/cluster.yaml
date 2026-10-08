@@ -29,6 +29,13 @@ spec:
             imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
             priorityClassName: db-critical
             enableSuperuserAccess: true
+            managed:
+              roles:
+              - name: litellm
+                ensure: present
+                login: true
+                passwordSecret:
+                  name: pg-litellm-role
             primaryUpdateStrategy: unsupervised
             postgresql:
               parameters:
@@ -50,6 +57,46 @@ spec:
               enablePodAntiAffinity: true
               podAntiAffinityType: required
               topologyKey: kubernetes.io/hostname
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: pg-litellm-role
+            namespace: postgres
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: pg-litellm-role
+              creationPolicy: Owner
+              deletionPolicy: Retain
+              template:
+                type: kubernetes.io/basic-auth
+                metadata:
+                  labels:
+                    cnpg.io/reload: "true"
+                data:
+                  username: litellm
+                  password: "{{ .password }}"
+            data:
+            - secretKey: password
+              remoteRef:
+                key: litellm-postgres-password
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: postgresql.cnpg.io/v1
+          kind: Database
+          metadata:
+            name: litellm
+            namespace: postgres
+          spec:
+            name: litellm
+            owner: litellm
+            cluster:
+              name: pg
+            databaseReclaimPolicy: retain
         - apiVersion: external-secrets.io/v1
           kind: ExternalSecret
           metadata:
