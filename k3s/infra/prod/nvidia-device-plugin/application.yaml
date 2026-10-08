@@ -13,7 +13,7 @@ spec:
       values: |
         runtimeClassName: nvidia
         nodeSelector:
-          gpu-worker: "true"
+          kubernetes.io/hostname: murderbot
         affinity: null
         tolerations:
           - key: gpu-worker
