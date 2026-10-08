@@ -1,0 +1,302 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zigbee2mqtt
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: zigbee2mqtt-backup-gcs
+            namespace: zigbee2mqtt
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: zigbee2mqtt-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: zigbee2mqtt-data
+            namespace: zigbee2mqtt
+          spec:
+            accessModes: [ReadWriteOnce]
+            storageClassName: longhorn-backup
+            resources:
+              requests:
+                storage: 2Gi
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: zigbee2mqtt
+            namespace: zigbee2mqtt
+          spec:
+            type: ClusterIP
+            selector:
+              app: zigbee2mqtt
+            ports:
+            - {name: frontend, port: 8099, protocol: TCP, targetPort: 8099}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: zigbee2mqtt-ingress-amer-dev
+            namespace: zigbee2mqtt
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              external-dns.alpha.kubernetes.io/hostname: z2m-dean-1.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
+              lbipam.cilium.io/sharing-key: external-ingress-private
+          spec:
+            tls:
+            - hosts:
+              - z2m-dean-1.amer.dev
+              secretName: z2m-dean-1-amer-dev-tls
+            rules:
+            - host: z2m-dean-1.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: zigbee2mqtt
+                      port:
+                        number: 8099
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: zigbee2mqtt
+            namespace: zigbee2mqtt
+            labels:
+              app: zigbee2mqtt
+              infra2.amer.dev/single-replica-exempt: "true"
+            annotations:
+              reloader.stakater.com/auto: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: zigbee2mqtt
+            template:
+              metadata:
+                labels:
+                  app: zigbee2mqtt
+              spec:
+                initContainers:
+                - name: seed
+                  image: busybox:1.37.0
+                  command:
+                  - sh
+                  - -c
+                  - |
+                    set -eu
+                    D=/data
+                    mkdir -p "$D/external_extensions"
+                    # State: only ever seeded into an empty volume. Z2M rewrites these itself.
+                    if [ ! -f "$D/database.db" ]; then
+                      if [ -f /seed/database.db ]; then
+                        echo "empty volume: seeding from migration secret"
+                        for f in configuration.yaml coordinator_backup.json database.db state.json; do
+                          cp "/seed/$f" "$D/$f"
+                        done
+                        sed -i 's#mqtt://10.100.20.18:1883#mqtt://mosquitto.mosquitto.svc.cluster.local:1883#' "$D/configuration.yaml"
+                        grep -q '^  log_output:' "$D/configuration.yaml" || sed -i 's#^  log_level: debug#  log_level: debug\n  log_output:\n    - console#' "$D/configuration.yaml"
+                        for f in sl-cache.json sl-pushed-hash.json; do
+                          [ -f "/seed/$f" ] && cp "/seed/$f" "$D/external_extensions/$f"
+                        done
+                      else
+                        echo "SEED_MISSING: empty volume and no seed secret; refusing to start with a fresh network" >&2
+                        exit 1
+                      fi
+                    else
+                      echo "volume already populated: leaving state untouched"
+                    fi
+                    # Code: always refreshed from the ConfigMap.
+                    cp /files/smart-lighting.js "$D/external_extensions/smart-lighting.js"
+                  volumeMounts:
+                  - {name: data, mountPath: /data}
+                  - {name: files, mountPath: /files, readOnly: true}
+                  - {name: seed, mountPath: /seed, readOnly: true}
+                  resources:
+                    requests:
+                      cpu: 10m
+                      memory: 16Mi
+                    limits:
+                      memory: 64Mi
+                containers:
+                - name: zigbee2mqtt
+                  image: koenkk/zigbee2mqtt:2.9.1
+                  env:
+                  - {name: TZ, value: America/New_York}
+                  ports:
+                  - {name: frontend, containerPort: 8099}
+                  startupProbe:
+                    tcpSocket:
+                      port: 8099
+                    periodSeconds: 10
+                    failureThreshold: 60
+                  readinessProbe:
+                    tcpSocket:
+                      port: 8099
+                    periodSeconds: 15
+                  livenessProbe:
+                    tcpSocket:
+                      port: 8099
+                    periodSeconds: 30
+                    failureThreshold: 6
+                  volumeMounts:
+                  - {name: data, mountPath: /app/data}
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 256Mi
+                    limits:
+                      memory: 768Mi
+                - name: slzb-proxy
+                  image: python:3.12-alpine
+                  command: ["python3", "-u", "/proxy/slzb-proxy.py"]
+                  env:
+                  - {name: SLZB_HOST, value: 10.100.20.158}
+                  - {name: SLZB_PORT, value: "6638"}
+                  - {name: PROXY_LISTEN_PORT, value: "6639"}
+                  volumeMounts:
+                  - {name: files, mountPath: /proxy, readOnly: true}
+                  resources:
+                    requests:
+                      cpu: 10m
+                      memory: 24Mi
+                    limits:
+                      memory: 64Mi
+                volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: zigbee2mqtt-data
+                - name: files
+                  configMap:
+                    name: zigbee2mqtt-files
+                - name: seed
+                  secret:
+                    secretName: zigbee2mqtt-seed
+                    optional: true
+        - apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: zigbee2mqtt-backup
+            namespace: zigbee2mqtt
+          spec:
+            schedule: "45 3 * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 2
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                backoffLimit: 1
+                template:
+                  spec:
+                    restartPolicy: Never
+                    affinity:
+                      podAffinity:
+                        requiredDuringSchedulingIgnoredDuringExecution:
+                        - topologyKey: kubernetes.io/hostname
+                          labelSelector:
+                            matchLabels:
+                              app: zigbee2mqtt
+                    containers:
+                    - name: upload
+                      image: rclone/rclone:1.75.1
+                      env:
+                      - {name: RCLONE_CONFIG_GCS_TYPE, value: s3}
+                      - {name: RCLONE_CONFIG_GCS_PROVIDER, value: GCS}
+                      - {name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET, value: "true"}
+                      - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                        valueFrom:
+                          secretKeyRef: {name: zigbee2mqtt-backup-gcs, key: access-key}
+                      - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef: {name: zigbee2mqtt-backup-gcs, key: secret-key}
+                      - name: RCLONE_CONFIG_GCS_ENDPOINT
+                        valueFrom:
+                          secretKeyRef: {name: zigbee2mqtt-backup-gcs, key: endpoint}
+                      command: ["/bin/sh", "-eu", "-c"]
+                      args:
+                      - |
+                        dest=GCS:amerenda-backups/k3s-dean/zigbee2mqtt
+                        ts=$(date -u +%Y%m%dT%H%M%SZ)
+                        n=0
+                        for f in database.db state.json coordinator_backup.json configuration.yaml external_extensions/sl-cache.json external_extensions/sl-pushed-hash.json; do
+                          src=/data/$f
+                          [ -f "$src" ] || { echo "BACKUP_FAILED missing $src" >&2; exit 1; }
+                          key=$dest/$ts/$(basename "$f")
+                          rclone copyto "$src" "$key"
+                          want=$(stat -c %s "$src")
+                          got=$(rclone lsf --format s "$key")
+                          [ "$want" = "$got" ] || { echo "BACKUP_FAILED size mismatch $key local=$want remote=$got" >&2; exit 1; }
+                          [ "$(rclone cat "$key" | sha256sum)" = "$(sha256sum < "$src")" ] || { echo "BACKUP_FAILED content mismatch $key" >&2; exit 1; }
+                          n=$((n+1))
+                        done
+                        rclone delete --min-age 14d "$dest"
+                        rclone rmdirs "$dest" --leave-root || true
+                        echo "BACKUP_OK objects=$n dest=$dest/$ts"
+                      volumeMounts:
+                      - {name: data, mountPath: /data, readOnly: true}
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          memory: 256Mi
+                    volumes:
+                    - name: data
+                      persistentVolumeClaim:
+                        claimName: zigbee2mqtt-data
+                        readOnly: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zigbee2mqtt
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
