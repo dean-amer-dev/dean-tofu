@@ -191,8 +191,8 @@ spec:
                   - {name: ENABLE_COMMUNITY_SHARING, value: "false"}
                   - {name: ENABLE_MEMORY_TOOL, value: "true"}
                   - {name: MEM0_BASE_URL, value: "https://mem0.amer.dev"}
-                  - {name: OPENAI_API_BASE_URLS, value: "http://qwen38-27b.llm.svc.cluster.local:8080/v1;http://qwen35-9b-mini.llm.svc.cluster.local:8080/v1"}
-                  - {name: OPENAI_API_KEYS, value: "none;none"}
+                  - {name: OPENAI_API_BASE_URLS, value: "http://llm-router-proxy.llm.svc.cluster.local:8080/v1"}
+                  - {name: OPENAI_API_KEYS, value: "none"}
                   - {name: SCARF_NO_ANALYTICS, value: "true"}
                   - {name: DO_NOT_TRACK, value: "true"}
                   - {name: ANONYMIZED_TELEMETRY, value: "false"}
