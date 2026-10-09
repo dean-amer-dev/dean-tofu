@@ -301,6 +301,23 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
+            name: tcp-probe-gmktec-public-gateway
+            namespace: monitoring
+          spec:
+            jobName: tcp-probe-gmktec-lb-vips
+            interval: 30s
+            scrapeTimeout: 15s
+            module: tcp_connect
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - 10.100.20.206:443
+                labels:
+                  service: gmktec-public-gateway
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
             name: icmp-probe-gmktec-nodes
             namespace: monitoring
           spec:

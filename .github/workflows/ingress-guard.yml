@@ -1,0 +1,18 @@
+name: ingress-guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ingress-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block dedicated-mode Ingresses
+        run: |
+          if grep -rn --include='*.yaml' -e 'loadbalancer-mode: dedicated' -e 'lbipam.cilium.io/sharing-key' k3s/; then
+            echo "::error::Dedicated-mode Ingresses are not allowed. Use the shared Cilium ingress (10.100.20.171) instead."
+            exit 1
+          fi
