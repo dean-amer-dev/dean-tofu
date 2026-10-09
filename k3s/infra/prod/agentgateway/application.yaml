@@ -74,6 +74,44 @@ spec:
                       conversionStrategy: Default
                       decodingStrategy: None
                       metadataPolicy: None
+            - apiVersion: external-secrets.io/v1
+              kind: ExternalSecret
+              metadata:
+                name: agentgateway-api-keys
+                namespace: agentgateway-system
+              spec:
+                refreshInterval: 1h
+                secretStoreRef:
+                  name: bitwarden-secretsmanager
+                  kind: ClusterSecretStore
+                target:
+                  name: agentgateway-api-keys
+                  creationPolicy: Owner
+                  deletionPolicy: Retain
+                data:
+                  - secretKey: claude-code
+                    remoteRef:
+                      key: agentgateway-api-key-claude-code
+                      conversionStrategy: Default
+                      decodingStrategy: None
+                      metadataPolicy: None
+            - apiVersion: agentgateway.dev/v1alpha1
+              kind: AgentgatewayPolicy
+              metadata:
+                name: api-key-auth
+                namespace: agentgateway-system
+              spec:
+                targetRefs:
+                  - group: gateway.networking.k8s.io
+                    kind: Gateway
+                    name: agentgateway-proxy
+                traffic:
+                  hostRewrite:
+                    mode: Auto
+                  apiKeyAuthentication:
+                    mode: Strict
+                    secretRef:
+                      name: agentgateway-api-keys
             - apiVersion: agentgateway.dev/v1alpha1
               kind: AgentgatewayBackend
               metadata:
