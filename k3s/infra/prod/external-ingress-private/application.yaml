@@ -13,16 +13,9 @@ spec:
         values: |
           resources:
             # ---------------------------------------------------------------
-            # LAN/Tailscale-only services. Every Ingress below carries
-            # ingress.cilium.io/loadbalancer-mode: dedicated + the same
-            # lbipam.cilium.io/sharing-key, so the whole group is pulled off
-            # the cluster's default shared Ingress IP (10.100.20.171 - the
-            # one the router NATs public :80/:443 to for external-ingress-
-            # public) onto one separate, non-forwarded private IP. Reachable
-            # from LAN and Tailscale (the subnet router already advertises
-            # 10.100.20.0/24) but never from the internet, by construction -
-            # no IP-allowlist policy needed. See Projects/Infrastructure-2.0
-            # notes for the full reasoning.
+            # LAN/Tailscale-only services. Nothing here is internet-facing:
+            # public routes live only in external-ingress-public (WAN-forwarded
+            # 10.100.20.206). The shared Ingress IP 10.100.20.171 is LAN-only.
             # ---------------------------------------------------------------
             - apiVersion: networking.k8s.io/v1
               kind: Ingress

@@ -12,43 +12,112 @@ spec:
       helm:
         values: |
           resources:
-            # Genuinely-public services on the shared, WAN-forwarded
-            # 10.100.20.171 (the EdgeRouter NATs public :80/:443 here) -
-            # moved verbatim from k3s/infra/external-ingress (2026-09-29
-            # private/public split). ha-mini-external (the backend Service
-            # this references) lives in external-ingress-private; Ingress
-            # objects can reference a Service by name regardless of which
-            # Application created it.
-            - apiVersion: networking.k8s.io/v1
-              kind: Ingress
+            # The only internet-facing entry point. The EdgeRouter forwards
+            # WAN :443 to 10.100.20.206, which only the ingress-public Gateway
+            # can hold (pool below). Every Ingress elsewhere stays on the
+            # LAN-only shared IP 10.100.20.171. Anything public is added here.
+            - apiVersion: v1
+              kind: Namespace
               metadata:
-                name: ha-pub-ingress-amer-dev
-                namespace: default
-                annotations:
-                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                name: ingress-public
+            - apiVersion: cilium.io/v2
+              kind: CiliumLoadBalancerIPPool
+              metadata:
+                name: ingress-public
               spec:
-                tls:
-                  - hosts:
-                      - ha.pub.amer.dev
-                    secretName: ha-pub-amer-dev-tls
+                blocks:
+                  - cidr: 10.100.20.206/32
+                serviceSelector:
+                  matchLabels:
+                    io.kubernetes.service.namespace: ingress-public
+            - apiVersion: cert-manager.io/v1
+              kind: Certificate
+              metadata:
+                name: ingress-public
+                namespace: ingress-public
+              spec:
+                secretName: ingress-public-tls
+                issuerRef:
+                  kind: ClusterIssuer
+                  name: letsencrypt-prod
+                dnsNames:
+                  - ha.pub.amer.dev
+                  - pubhooks.amer.dev
+            - apiVersion: agentgateway.dev/v1alpha1
+              kind: AgentgatewayParameters
+              metadata:
+                name: ingress-public
+                namespace: ingress-public
+              spec:
+                deployment:
+                  spec:
+                    replicas: 2
+                service:
+                  metadata:
+                    annotations:
+                      lbipam.cilium.io/ips: 10.100.20.206
+                  spec:
+                    type: LoadBalancer
+            - apiVersion: gateway.networking.k8s.io/v1
+              kind: Gateway
+              metadata:
+                name: ingress-public
+                namespace: ingress-public
+              spec:
+                gatewayClassName: agentgateway
+                infrastructure:
+                  parametersRef:
+                    group: agentgateway.dev
+                    kind: AgentgatewayParameters
+                    name: ingress-public
+                listeners:
+                  - name: https
+                    protocol: HTTPS
+                    port: 443
+                    tls:
+                      mode: Terminate
+                      certificateRefs:
+                        - name: ingress-public-tls
+                    allowedRoutes:
+                      namespaces:
+                        from: Same
+
+            - apiVersion: gateway.networking.k8s.io/v1
+              kind: HTTPRoute
+              metadata:
+                name: ha-pub
+                namespace: ingress-public
+              spec:
+                parentRefs:
+                  - name: ingress-public
+                hostnames:
+                  - ha.pub.amer.dev
                 rules:
-                  - host: ha.pub.amer.dev
-                    http:
-                      paths:
-                        - path: /auth/
-                          pathType: Prefix
-                          backend:
-                            service:
-                              name: ha-mini-external
-                              port:
-                                number: 8123
-                        - path: /api/google_assistant
-                          pathType: Prefix
-                          backend:
-                            service:
-                              name: ha-mini-external
-                              port:
-                                number: 8123
+                  - matches:
+                      - path:
+                          type: PathPrefix
+                          value: /auth/
+                      - path:
+                          type: PathPrefix
+                          value: /api/google_assistant
+                    backendRefs:
+                      - name: home-assistant-r3
+                        namespace: home-assistant
+                        port: 8080
+            - apiVersion: gateway.networking.k8s.io/v1beta1
+              kind: ReferenceGrant
+              metadata:
+                name: ingress-public
+                namespace: home-assistant
+              spec:
+                from:
+                  - group: gateway.networking.k8s.io
+                    kind: HTTPRoute
+                    namespace: ingress-public
+                to:
+                  - group: ""
+                    kind: Service
+                    name: home-assistant-r3
             - apiVersion: externaldns.k8s.io/v1alpha1
               kind: DNSEndpoint
               metadata:
@@ -62,6 +131,39 @@ spec:
                     targets:
                       - 67.250.70.153
 
+            - apiVersion: gateway.networking.k8s.io/v1
+              kind: HTTPRoute
+              metadata:
+                name: pubhooks
+                namespace: ingress-public
+              spec:
+                parentRefs:
+                  - name: ingress-public
+                hostnames:
+                  - pubhooks.amer.dev
+                rules:
+                  - matches:
+                      - path:
+                          type: PathPrefix
+                          value: /listener/github/
+                    backendRefs:
+                      - name: komodo
+                        namespace: komodo
+                        port: 9120
+            - apiVersion: gateway.networking.k8s.io/v1beta1
+              kind: ReferenceGrant
+              metadata:
+                name: ingress-public
+                namespace: komodo
+              spec:
+                from:
+                  - group: gateway.networking.k8s.io
+                    kind: HTTPRoute
+                    namespace: ingress-public
+                to:
+                  - group: ""
+                    kind: Service
+                    name: komodo
             - apiVersion: externaldns.k8s.io/v1alpha1
               kind: DNSEndpoint
               metadata:
@@ -84,3 +186,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
