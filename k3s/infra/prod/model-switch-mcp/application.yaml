@@ -82,7 +82,7 @@ spec:
                           app: model-switch-mcp-server
                   containers:
                     - name: server
-                      image: ghcr.io/dean-amer-dev/model-switch-mcp@sha256:5834437b7d4b756719194813b12c71c5cf3da192ed99c234375f40bfd9187cf3
+                      image: ghcr.io/dean-amer-dev/model-switch-mcp@sha256:bc33f1d590c08d587c27e07a714ac630e01fe11af551b6e34f167d877da13a94
                       ports:
                         - containerPort: 8000
                       env:
