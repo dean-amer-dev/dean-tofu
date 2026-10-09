@@ -28,8 +28,3 @@ variable "kubeconfig_path" {
 resource "kubectl_manifest" "applicationset" {
   yaml_body = file("${path.module}/applicationset.yaml")
 }
-
-# litellm shares this state so one apply covers a server and its litellm entry
-resource "kubectl_manifest" "litellm" {
-  yaml_body = file("${path.module}/litellm-application.yaml")
-}
