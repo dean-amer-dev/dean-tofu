@@ -39,7 +39,7 @@ spec:
           serviceMonitor:
             enabled: true
           inferencePodMonitor:
-            enabled: true
+            enabled: false
           routerPodMonitor:
             enabled: true
           prometheusRule:
