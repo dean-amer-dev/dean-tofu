@@ -13,6 +13,14 @@ spec:
       values: |
         resources:
           - apiVersion: v1
+            kind: ResourceQuota
+            metadata:
+              name: gpu
+              namespace: llm-bench
+            spec:
+              hard:
+                requests.nvidia.com/gpu: "1"
+          - apiVersion: v1
             kind: PersistentVolumeClaim
             metadata:
               name: llm-bench-weights
