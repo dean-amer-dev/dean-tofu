@@ -125,24 +125,6 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
-            name: https-probes-litellm
-            namespace: monitoring
-          spec:
-            jobName: https-probes-litellm
-            interval: 30s
-            scrapeTimeout: 15s
-            module: https_2xx
-            prober: *id001
-            targets:
-              staticConfig:
-                static:
-                - litellm.amer.dev/health/readiness
-                labels:
-                  stack: llm
-                  service: litellm
-        - apiVersion: monitoring.coreos.com/v1
-          kind: Probe
-          metadata:
             name: https-probes-agentgateway
             namespace: monitoring
           spec:
