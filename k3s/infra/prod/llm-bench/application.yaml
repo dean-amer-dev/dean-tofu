@@ -1,0 +1,115 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-bench
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: prepull-ninfer
+              namespace: llm-bench
+            spec:
+              backoffLimit: 4
+              template:
+                spec:
+                  restartPolicy: Never
+                  runtimeClassName: nvidia
+                  nodeSelector:
+                    kubernetes.io/hostname: murderbot
+                  tolerations:
+                    - key: gpu-worker
+                      operator: Equal
+                      value: "true"
+                      effect: NoSchedule
+                  containers:
+                    - name: smoke
+                      image: ghcr.io/dean-amer-dev/murderbot-llm@sha256:6ee1e235b1361f2b00eec09f72f1dd5157f01c917cb36ad35c50238f4ab2d222
+                      imagePullPolicy: IfNotPresent
+                      command: ["sh", "-c", "nvidia-smi -L; ls /app /usr/local/bin 2>&1 | head -40"]
+                      env:
+                        - name: NVIDIA_VISIBLE_DEVICES
+                          value: all
+                        - name: NVIDIA_DRIVER_CAPABILITIES
+                          value: compute,utility
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: prepull-llamacpp
+              namespace: llm-bench
+            spec:
+              backoffLimit: 4
+              template:
+                spec:
+                  restartPolicy: Never
+                  runtimeClassName: nvidia
+                  nodeSelector:
+                    kubernetes.io/hostname: murderbot
+                  tolerations:
+                    - key: gpu-worker
+                      operator: Equal
+                      value: "true"
+                      effect: NoSchedule
+                  containers:
+                    - name: smoke
+                      image: ghcr.io/ggml-org/llama.cpp@sha256:6869e4456217802e5372774be236a9aa93666cfb7f033b7d39cd58b178af6489
+                      imagePullPolicy: IfNotPresent
+                      command: ["sh", "-c", "nvidia-smi -L; /app/llama-server --version 2>&1 | tail -5"]
+                      env:
+                        - name: NVIDIA_VISIBLE_DEVICES
+                          value: all
+                        - name: NVIDIA_DRIVER_CAPABILITIES
+                          value: compute,utility
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: prepull-ollama
+              namespace: llm-bench
+            spec:
+              backoffLimit: 4
+              template:
+                spec:
+                  restartPolicy: Never
+                  runtimeClassName: nvidia
+                  nodeSelector:
+                    kubernetes.io/hostname: murderbot
+                  tolerations:
+                    - key: gpu-worker
+                      operator: Equal
+                      value: "true"
+                      effect: NoSchedule
+                  containers:
+                    - name: smoke
+                      image: docker.io/ollama/ollama@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb
+                      imagePullPolicy: IfNotPresent
+                      command: ["sh", "-c", "nvidia-smi -L; ollama --version"]
+                      env:
+                        - name: NVIDIA_VISIBLE_DEVICES
+                          value: all
+                        - name: NVIDIA_DRIVER_CAPABILITIES
+                          value: compute,utility
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llm-bench
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
