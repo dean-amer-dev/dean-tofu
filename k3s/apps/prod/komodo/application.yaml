@@ -85,8 +85,6 @@ spec:
               cert-manager.io/cluster-issuer: letsencrypt-prod
               external-dns.alpha.kubernetes.io/hostname: komodo.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
-              ingress.cilium.io/loadbalancer-mode: dedicated
-              lbipam.cilium.io/sharing-key: external-ingress-private
           spec:
             tls:
             - hosts:
