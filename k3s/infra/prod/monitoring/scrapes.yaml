@@ -179,18 +179,18 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
-            name: tcp-probes-couchdb
+            name: https-probes-couchdb
             namespace: monitoring
           spec:
-            jobName: tcp-probes-couchdb
+            jobName: https-probes-couchdb
             interval: 30s
             scrapeTimeout: 15s
-            module: tcp_connect
+            module: https_auth_required
             prober: *id001
             targets:
               staticConfig:
                 static:
-                - couchdb-svc-couchdb.couchdb.svc:5984
+                - couchdb.amer.dev
                 labels:
                   stack: db
                   service: couchdb
