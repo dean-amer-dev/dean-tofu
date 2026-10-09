@@ -56,9 +56,9 @@ spec:
             POSTGRES_DB: mem0
             POSTGRES_USER: mem0
             APP_DB_NAME: mem0
-            OPENAI_BASE_URL: http://litellm-server.litellm.svc:4000/v1
-            MEM0_DEFAULT_LLM_MODEL: mini-qwen35-9b
-            MEM0_DEFAULT_EMBEDDER_MODEL: nomic-embed-text
+            OPENAI_BASE_URL: http://llm-router-proxy.llm.svc.cluster.local:8080/v1
+            MEM0_DEFAULT_LLM_MODEL: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-MLX-mxfp4
+            MEM0_DEFAULT_EMBEDDER_MODEL: nomicai-modernbert-embed-base-8bit
             EMBEDDING_MODEL_DIMS: "768"
             HISTORY_DB_PATH: ":memory:"
             MEM0_TELEMETRY: "false"

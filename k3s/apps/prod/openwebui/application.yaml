@@ -185,7 +185,7 @@ spec:
                     valueFrom:
                       secretKeyRef: {name: openwebui-postgres, key: uri}
                   - {name: WEBUI_URL, value: "https://bot.amer.dev"}
-                  - {name: DEFAULT_MODELS, value: "qwen3.8-27b"}
+                  - {name: DEFAULT_MODELS, value: "qwen3.8-27b-uncensored"}
                   - {name: ENABLE_OLLAMA_API, value: "false"}
                   - {name: WEBUI_AUTH, value: "true"}
                   - {name: ENABLE_COMMUNITY_SHARING, value: "false"}
