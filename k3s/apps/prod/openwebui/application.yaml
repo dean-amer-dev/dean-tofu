@@ -1,0 +1,279 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openwebui
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: openwebui-auth
+            namespace: openwebui
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: openwebui-auth
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: WEBUI_SECRET_KEY
+              remoteRef:
+                key: openwebui-dean-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: OPENAI_API_KEY
+              remoteRef:
+                key: litellm-master-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: PRAETOR_API_KEY
+              remoteRef:
+                key: praetor-api-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: openwebui-backup-gcs
+            namespace: openwebui
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: bitwarden-secretsmanager
+              kind: ClusterSecretStore
+            target:
+              name: openwebui-backup-gcs
+              creationPolicy: Owner
+              deletionPolicy: Retain
+            data:
+            - secretKey: access-key
+              remoteRef:
+                key: k3s-dean-backups-access-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: secret-key
+              remoteRef:
+                key: k3s-dean-backups-secret-key
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+            - secretKey: endpoint
+              remoteRef:
+                key: k3s-dean-backups-endpoint
+                conversionStrategy: Default
+                decodingStrategy: None
+                metadataPolicy: None
+        - apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: openwebui-data
+            namespace: openwebui
+          spec:
+            accessModes: [ReadWriteOnce]
+            storageClassName: longhorn-backup
+            resources:
+              requests:
+                storage: 5Gi
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: openwebui
+            namespace: openwebui
+          spec:
+            selector:
+              app: openwebui
+            ports:
+            - name: http
+              port: 8080
+              targetPort: 8080
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: openwebui
+            namespace: openwebui
+            annotations:
+              reloader.stakater.com/auto: "true"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app: openwebui
+            template:
+              metadata:
+                labels:
+                  app: openwebui
+              spec:
+                enableServiceLinks: false
+                tolerations:
+                - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
+                - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
+                initContainers:
+                - name: fetch-dump
+                  image: rclone/rclone:1.75.1
+                  env:
+                  - {name: RCLONE_CONFIG_GCS_TYPE, value: s3}
+                  - {name: RCLONE_CONFIG_GCS_PROVIDER, value: GCS}
+                  - {name: RCLONE_CONFIG_GCS_NO_CHECK_BUCKET, value: "true"}
+                  - name: RCLONE_CONFIG_GCS_ACCESS_KEY_ID
+                    valueFrom:
+                      secretKeyRef: {name: openwebui-backup-gcs, key: access-key}
+                  - name: RCLONE_CONFIG_GCS_SECRET_ACCESS_KEY
+                    valueFrom:
+                      secretKeyRef: {name: openwebui-backup-gcs, key: secret-key}
+                  - name: RCLONE_CONFIG_GCS_ENDPOINT
+                    valueFrom:
+                      secretKeyRef: {name: openwebui-backup-gcs, key: endpoint}
+                  command: ["/bin/sh", "-eu", "-c"]
+                  args:
+                  - |
+                    latest=$(rclone lsf -R --files-only --include "openwebui.dump" GCS:amerenda-backups/k3s-dean/legacy-mini-postgres/ | sort | tail -n 1)
+                    [ -n "$latest" ] || { echo "no openwebui.dump found" >&2; exit 1; }
+                    echo "using $latest"
+                    rclone copyto "GCS:amerenda-backups/k3s-dean/legacy-mini-postgres/$latest" /dump/openwebui.dump
+                    ls -l /dump/openwebui.dump
+                  volumeMounts:
+                  - {name: dump, mountPath: /dump}
+                  resources:
+                    requests: {cpu: 20m, memory: 64Mi}
+                    limits: {memory: 256Mi}
+                - name: restore-db
+                  image: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+                  env:
+                  - name: DBURI
+                    valueFrom:
+                      secretKeyRef: {name: openwebui-postgres, key: uri}
+                  command: ["/bin/bash", "-euo", "pipefail", "-c"]
+                  args:
+                  - |
+                    pg_restore -l /dump/openwebui.dump >/dev/null
+                    has=$(psql "$DBURI" -Atc "select to_regclass('public.\"user\"') is not null")
+                    if [ "$has" = "t" ]; then
+                      n=$(psql "$DBURI" -Atc 'select count(*) from public."user"')
+                      echo "database already restored ($n users), skipping"
+                      exit 0
+                    fi
+                    psql "$DBURI" -c "drop schema public cascade; create schema public"
+                    pg_restore --no-owner --no-acl --exit-on-error -d "$DBURI" /dump/openwebui.dump
+                    n=$(psql "$DBURI" -Atc 'select count(*) from public."user"')
+                    echo "RESTORE_OK users=$n"
+                  volumeMounts:
+                  - {name: dump, mountPath: /dump}
+                  resources:
+                    requests: {cpu: 20m, memory: 64Mi}
+                    limits: {memory: 512Mi}
+                containers:
+                - name: openwebui
+                  image: ghcr.io/open-webui/open-webui:v0.9.6
+                  ports:
+                  - containerPort: 8080
+                  envFrom:
+                  - secretRef:
+                      name: openwebui-auth
+                  env:
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef: {name: openwebui-postgres, key: uri}
+                  - {name: WEBUI_URL, value: "https://bot-k3s.amer.dev"}
+                  - {name: DEFAULT_MODELS, value: "murderbot-v1-custom"}
+                  - {name: ENABLE_OLLAMA_API, value: "false"}
+                  - {name: WEBUI_AUTH, value: "true"}
+                  - {name: ENABLE_COMMUNITY_SHARING, value: "false"}
+                  - {name: ENABLE_MEMORY_TOOL, value: "true"}
+                  - {name: MEM0_BASE_URL, value: "https://mem0.amer.dev"}
+                  - {name: OPENAI_API_BASE_URL, value: "http://litellm-server.litellm.svc:4000/v1"}
+                  - {name: SCARF_NO_ANALYTICS, value: "true"}
+                  - {name: DO_NOT_TRACK, value: "true"}
+                  - {name: ANONYMIZED_TELEMETRY, value: "false"}
+                  volumeMounts:
+                  - {name: data, mountPath: /app/backend/data}
+                  startupProbe:
+                    httpGet: {path: /health, port: 8080}
+                    periodSeconds: 10
+                    failureThreshold: 60
+                  readinessProbe:
+                    httpGet: {path: /health, port: 8080}
+                    periodSeconds: 10
+                  livenessProbe:
+                    httpGet: {path: /health, port: 8080}
+                    periodSeconds: 30
+                    timeoutSeconds: 10
+                    failureThreshold: 3
+                  resources:
+                    requests: {cpu: 100m, memory: 768Mi}
+                    limits: {memory: 2Gi}
+                volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: openwebui-data
+                - name: dump
+                  emptyDir: {}
+        - apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: openwebui-bot-k3s-amer-dev
+            namespace: openwebui
+          spec:
+            secretName: openwebui-bot-k3s-amer-dev-tls
+            issuerRef:
+              name: letsencrypt-prod
+              kind: ClusterIssuer
+            dnsNames:
+            - bot-k3s.amer.dev
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: openwebui-ingress
+            namespace: openwebui
+            annotations:
+              external-dns.alpha.kubernetes.io/hostname: bot-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/ttl: "300"
+          spec:
+            ingressClassName: cilium
+            tls:
+            - hosts:
+              - bot-k3s.amer.dev
+              secretName: openwebui-bot-k3s-amer-dev-tls
+            rules:
+            - host: bot-k3s.amer.dev
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: openwebui
+                      port:
+                        number: 8080
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openwebui
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
