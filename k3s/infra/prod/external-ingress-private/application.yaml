@@ -12,11 +12,7 @@ spec:
       helm:
         values: |
           resources:
-            # ---------------------------------------------------------------
-            # LAN/Tailscale-only services. Nothing here is internet-facing:
-            # public routes live only in external-ingress-public (WAN-forwarded
-            # 10.100.20.206). The shared Ingress IP 10.100.20.171 is LAN-only.
-            # ---------------------------------------------------------------
+            # LAN/Tailscale-only services on the shared Ingress IP 10.100.20.171. Public routes live only in external-ingress-public.
             - apiVersion: networking.k8s.io/v1
               kind: Ingress
               metadata:
@@ -26,8 +22,6 @@ spec:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: argo.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -80,8 +74,6 @@ spec:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: comfy.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -106,7 +98,7 @@ spec:
             # - same hosts/ports, one wildcard cert, no per-ingress
             # cert-manager annotation (would create 11 duplicate Certificates
             # for the same secret - one explicit Certificate below instead).
-            # Security here comes from being in this dedicated-mode group
+            # Security here comes from the shared IP .171 being LAN-only
             # (never WAN-forwarded), replacing the old ipAllowList Middleware
             # - not from an equivalent in-cluster policy.
             # ---------------------------------------------------------------
@@ -159,8 +151,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -213,8 +203,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: sonarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -267,8 +255,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: radarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -321,8 +307,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: bazarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -375,8 +359,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: prowlarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -429,8 +411,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: profilarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -483,8 +463,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: sabnzbd.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -537,8 +515,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: seerr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -591,8 +567,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: shelfarr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -645,8 +619,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: bookorbit.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -699,8 +671,6 @@ spec:
                 annotations:
                   external-dns.alpha.kubernetes.io/hostname: maintainerr.media.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
@@ -726,8 +696,6 @@ spec:
                   cert-manager.io/cluster-issuer: letsencrypt-prod
                   external-dns.alpha.kubernetes.io/hostname: ag.amer.dev
                   external-dns.alpha.kubernetes.io/ttl: "300"
-                  ingress.cilium.io/loadbalancer-mode: dedicated
-                  lbipam.cilium.io/sharing-key: external-ingress-private
               spec:
                 tls:
                   - hosts:
