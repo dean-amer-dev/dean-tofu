@@ -103,29 +103,6 @@ spec:
                       name: komodo
                       port:
                         number: 9120
-        - apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: pubhooks-github-ingress-amer-dev
-            namespace: komodo
-            annotations:
-              cert-manager.io/cluster-issuer: letsencrypt-prod
-          spec:
-            tls:
-            - hosts:
-              - pubhooks.amer.dev
-              secretName: pubhooks-amer-dev-tls
-            rules:
-            - host: pubhooks.amer.dev
-              http:
-                paths:
-                - path: /listener/github/
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: komodo
-                      port:
-                        number: 9120
         - apiVersion: apps/v1
           kind: Deployment
           metadata:
