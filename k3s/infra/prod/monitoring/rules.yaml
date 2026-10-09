@@ -1,0 +1,284 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-rules
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+        - apiVersion: monitoring.coreos.com/v1
+          kind: PrometheusRule
+          metadata:
+            name: cluster-alerts
+            namespace: monitoring
+          spec:
+            groups:
+            - name: nodes
+              rules:
+              - alert: NodeDown
+                expr: up{job=~"node-exporter|murderbot-node|archlinux-node"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Node exporter on {{ $labels.instance }} is down
+                for: 5m
+              - alert: NodeUnreachablePing
+                expr: probe_success{job=~"icmp-probe.*"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: '{{ $labels.instance }} does not answer ping'
+                for: 5m
+              - alert: DiskSpaceLow
+                expr: min by (instance, device, fstype) (100 * node_filesystem_avail_bytes{fstype!~"tmpfs|devtmpfs|overlay|aufs|squashfs|ramfs|vfat|efivarfs|fuse.*|nsfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|devtmpfs|overlay|aufs|squashfs|ramfs|vfat|efivarfs|fuse.*|nsfs"}) < 15
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.device }} on {{ $labels.instance }} has {{ $value | printf "%.1f" }}% free'
+                for: 10m
+              - alert: DiskSpaceCritical
+                expr: min by (instance, device, fstype) (100 * node_filesystem_avail_bytes{fstype!~"tmpfs|devtmpfs|overlay|aufs|squashfs|ramfs|vfat|efivarfs|fuse.*|nsfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|devtmpfs|overlay|aufs|squashfs|ramfs|vfat|efivarfs|fuse.*|nsfs"}) < 5
+                labels:
+                  severity: critical
+                annotations:
+                  summary: '{{ $labels.device }} on {{ $labels.instance }} has only {{ $value | printf "%.1f" }}% free'
+                for: 5m
+              - alert: NodeMemoryLow
+                expr: 100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 8
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.instance }} has {{ $value | printf "%.1f" }}% memory available'
+                for: 10m
+              - alert: NodeSwapExhausted
+                expr: node_memory_SwapTotal_bytes > 0 and (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) < 0.1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.instance }} swap is over 90% used'
+                for: 15m
+              - alert: NodeHot
+                expr: max by (instance) (node_hwmon_temp_celsius{chip!~"nvme.*"}) > 92
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.instance }} hardware temperature is {{ $value | printf "%.0f" }}C'
+                for: 10m
+              - alert: RaidArrayDegraded
+                expr: max by (instance, device) (node_md_degraded) > 0 or max by (instance, device) (node_md_disks{state="failed"}) > 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: RAID array {{ $labels.device }} on {{ $labels.instance }} is degraded
+                for: 2m
+              - alert: GPUHot
+                expr: nvidia_gpu_temperature > 85
+                labels:
+                  severity: warning
+                annotations:
+                  summary: GPU {{ $labels.gpu }} on {{ $labels.node }} is at {{ $value | printf "%.0f" }}C
+                for: 10m
+            - name: kubernetes
+              rules:
+              - alert: KubeNodeNotReady
+                expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Kubernetes node {{ $labels.node }} is NotReady
+                for: 5m
+              - alert: KubeAPIServerDown
+                expr: up{job="apiserver"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: kube-apiserver {{ $labels.instance }} is down
+                for: 5m
+              - alert: KubePodCrashLooping
+                expr: max by (namespace, pod, container) (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}) == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is crash looping'
+                for: 5m
+              - alert: KubePodNotReady
+                expr: sum by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Unknown|Failed"}) > 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.namespace }}/{{ $labels.pod }} has not been ready for 20 minutes'
+                for: 20m
+              - alert: KubeContainerOOMKilled
+                expr: sum by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total[15m])) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) was OOM killed'
+              - alert: KubeDeploymentUnavailable
+                expr: kube_deployment_status_replicas_unavailable > 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has unavailable replicas
+                for: 20m
+              - alert: KubeStatefulSetNotReady
+                expr: kube_statefulset_status_replicas_ready < kube_statefulset_replicas
+                labels:
+                  severity: warning
+                annotations:
+                  summary: StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has fewer ready replicas than desired
+                for: 20m
+              - alert: KubeDaemonSetNotReady
+                expr: kube_daemonset_status_number_ready < kube_daemonset_status_desired_number_scheduled
+                labels:
+                  severity: warning
+                annotations:
+                  summary: DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is missing ready pods
+                for: 20m
+              - alert: KubeJobFailed
+                expr: kube_job_status_failed > 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Job {{ $labels.namespace }}/{{ $labels.job_name }} failed
+                for: 10m
+              - alert: PVCFillingUp
+                expr: 100 * kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 15
+                labels:
+                  severity: warning
+                annotations:
+                  summary: PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has {{ $value | printf "%.1f" }}% free
+                for: 15m
+              - alert: PVCAlmostFull
+                expr: 100 * kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 5
+                labels:
+                  severity: critical
+                annotations:
+                  summary: PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has only {{ $value | printf "%.1f" }}% free
+                for: 5m
+            - name: platform
+              rules:
+              - alert: ArgoAppUnhealthy
+                expr: argocd_app_info{health_status!~"Healthy|Progressing"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Argo CD application {{ $labels.name }} is {{ $labels.health_status }}
+                for: 15m
+              - alert: ArgoAppOutOfSync
+                expr: argocd_app_info{sync_status!="Synced"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Argo CD application {{ $labels.name }} is {{ $labels.sync_status }}
+                for: 30m
+              - alert: CertificateNotReady
+                expr: certmanager_certificate_ready_status{condition="False"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} is not Ready
+                for: 20m
+              - alert: CertificateExpiringSoon
+                expr: certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in under 7 days
+                for: 10m
+              - alert: ExternalSecretNotSynced
+                expr: externalsecret_status_condition{condition="Ready",status="False"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: ExternalSecret {{ $labels.exported_namespace }}/{{ $labels.name }} is not syncing
+                for: 20m
+              - alert: LonghornVolumeDegraded
+                expr: longhorn_volume_robustness == 2
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Longhorn volume {{ $labels.volume }} is degraded
+                for: 30m
+              - alert: LonghornVolumeFaulted
+                expr: longhorn_volume_robustness == 3
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Longhorn volume {{ $labels.volume }} is faulted
+                for: 2m
+              - alert: LonghornDiskUsageHigh
+                expr: 100 * longhorn_disk_usage_bytes / longhorn_disk_capacity_bytes > 85
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Longhorn disk on {{ $labels.node }} is {{ $value | printf "%.0f" }}% used
+                for: 15m
+              - alert: CoreDNSDown
+                expr: up{job="coredns"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: CoreDNS {{ $labels.instance }} is down
+                for: 5m
+            - name: monitoring
+              rules:
+              - alert: TargetDown
+                expr: up{job!~"mac-mini-node|archlinux-amd-gpu"} == 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Scrape target {{ $labels.job }} / {{ $labels.instance }} is down
+                for: 10m
+              - alert: AlertmanagerDown
+                expr: up{job="kube-prometheus-stack-alertmanager"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Alertmanager {{ $labels.instance }} is down
+                for: 5m
+              - alert: PrometheusRuleEvaluationFailing
+                expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Prometheus rule group {{ $labels.rule_group }} is failing to evaluate
+                for: 5m
+              - alert: PrometheusNotSendingAlerts
+                expr: increase(prometheus_notifications_errors_total[10m]) > 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Prometheus is failing to send alerts to {{ $labels.alertmanager }}
+                for: 5m
+            - name: probes
+              rules:
+              - alert: ProbeFailing
+                expr: probe_success == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Probe {{ $labels.job }} to {{ $labels.instance }} is failing
+                for: 5m
+              - alert: TLSCertExpiringSoon
+                expr: probe_ssl_earliest_cert_expiry > 0 and (probe_ssl_earliest_cert_expiry - time()) < 14 * 86400 and probe_success == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: TLS certificate for {{ $labels.instance }} expires in under 14 days
+                for: 10m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true

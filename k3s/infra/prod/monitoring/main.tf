@@ -73,6 +73,11 @@ resource "kubectl_manifest" "scrapes" {
   yaml_body  = file("${path.module}/scrapes.yaml")
 }
 
+resource "kubectl_manifest" "rules" {
+  depends_on = [kubectl_manifest.application]
+  yaml_body  = file("${path.module}/rules.yaml")
+}
+
 resource "kubectl_manifest" "dashboards" {
   for_each   = fileset("${path.module}/dashboards", "*.yaml")
   depends_on = [kubectl_manifest.application]

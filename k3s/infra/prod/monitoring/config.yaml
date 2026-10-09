@@ -60,19 +60,17 @@ spec:
                       resolve_timeout: 5m
 
                     route:
-                      receiver: 'pushover'
-                      group_by: ['alertname', 'stack']
+                      receiver: 'grafana-only'
+                      group_by: ['alertname', 'instance']
                       group_wait: 30s
                       group_interval: 5m
-                      repeat_interval: 6h
+                      repeat_interval: 12h
                       routes:
-                        - matchers:
-                            - alertname =~ "DiskSpace.*"
-                          receiver: 'pushover-disk'
-                          repeat_interval: 24h
-                        - matchers:
-                            - alertname =~ "MurderbotSwapNearlyExhausted|MurderbotIowaitCritical|MurderbotMemoryLow"
-                          receiver: 'grafana-only'
+                        - receiver: 'pushover'
+                          matchers:
+                            - alertname = "RaidArrayDegraded"
+                            - instance = "murderbot"
+                          repeat_interval: 4h
 
                     receivers:
                       - name: 'grafana-only'
@@ -85,17 +83,6 @@ spec:
                               {{ `{{ range .Alerts }}` }}{{ `{{ .Annotations.summary }}` }}
                               {{ `{{ end }}` }}
                             url: 'https://alertmanager.amer.dev'
-                            priority: '0'
-                            send_resolved: true
-                      - name: 'pushover-disk'
-                        pushover_configs:
-                          - user_key: '{{ .user_key }}'
-                            token: '{{ .token }}'
-                            title: '[{{ `{{ .Status | toUpper }}` }}] {{ `{{ .CommonLabels.alertname }}` }} ({{ `{{ .CommonLabels.severity }}` }}){{ `{{ if gt (len .Alerts) 1 }}` }} x{{ `{{ len .Alerts }}` }}{{ `{{ end }}` }}'
-                            message: |-
-                              {{ `{{ range .Alerts }}` }}{{ `{{ .Annotations.summary }}` }}
-                              {{ `{{ end }}` }}
-                            url: 'https://grafana.amer.dev/d/infra-node-exporter/infra3a-node-exporter?var-instance={{ `{{ (index .Alerts 0).Labels.instance }}` }}'
                             priority: '0'
                             send_resolved: true
             data:

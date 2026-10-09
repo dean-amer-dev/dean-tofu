@@ -41,6 +41,16 @@ spec:
                   insecure_skip_verify: false
                 headers:
                   User-Agent: blackbox-health-probe/1.0
+            https_auth_required:
+              prober: http
+              timeout: 10s
+              http:
+                preferred_ip_protocol: ip4
+                follow_redirects: true
+                fail_if_not_ssl: true
+                valid_status_codes: [200, 401]
+                headers:
+                  User-Agent: blackbox-health-probe/1.0
             tcp_connect:
               prober: tcp
               timeout: 5s
