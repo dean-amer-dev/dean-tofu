@@ -219,25 +219,6 @@ spec:
           - apiVersion: inference.llmkube.dev/v1alpha1
             kind: Model
             metadata:
-              name: qwen35-9b-mlx
-              namespace: llm
-            spec:
-              source: /Users/alex/.omlx/models/mlx-community/Qwen3.5-9B-MLX-4bit
-              format: mlx
-              hardware:
-                accelerator: metal
-          - apiVersion: inference.llmkube.dev/v1alpha1
-            kind: InferenceService
-            metadata:
-              name: qwen35-9b-mini
-              namespace: llm
-            spec:
-              modelRef: qwen35-9b-mlx
-              runtime: omlx
-              replicas: 1
-          - apiVersion: inference.llmkube.dev/v1alpha1
-            kind: Model
-            metadata:
               name: modernbert-embed-mlx
               namespace: llm
             spec:
@@ -272,7 +253,7 @@ spec:
             spec:
               modelRef: qwen35-9b-hauhau-mlx
               runtime: omlx
-              replicas: 0
+              replicas: 1
           - apiVersion: inference.llmkube.dev/v1alpha1
             kind: ModelRouter
             metadata:
@@ -281,7 +262,6 @@ spec:
             spec:
               dataPlane: Proxy
               defaultRouteStrategy: BackendNameMatch
-              defaultRoute: qwen38-27b
               proxy:
                 replicas: 2
               endpoint:
@@ -297,22 +277,6 @@ spec:
                     provider: openai
                     url: http://qwen38-27b.llm.svc.cluster.local:8080
                     model: qwen3.8-27b
-                - name: qwen35-9b-mini
-                  displayName: Qwen3.5-9B-MLX-4bit
-                  resolution: service
-                  tier: local
-                  external:
-                    provider: openai
-                    url: http://qwen35-9b-mini.llm.svc.cluster.local:8080
-                    model: Qwen3.5-9B-MLX-4bit
-                - name: modernbert-embed-mini
-                  displayName: nomicai-modernbert-embed-base-8bit
-                  resolution: service
-                  tier: local
-                  external:
-                    provider: openai
-                    url: http://modernbert-embed-mini.llm.svc.cluster.local:8080
-                    model: nomicai-modernbert-embed-base-8bit
                 - name: qwen38-27b-uncensored
                   displayName: qwen3.8-27b-uncensored
                   resolution: service
@@ -329,6 +293,14 @@ spec:
                     provider: openai
                     url: http://qwen35-9b-uncensored-mini.llm.svc.cluster.local:8080
                     model: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-MLX-mxfp4
+                - name: modernbert-embed-mini
+                  displayName: nomicai-modernbert-embed-base-8bit
+                  resolution: service
+                  tier: local
+                  external:
+                    provider: openai
+                    url: http://modernbert-embed-mini.llm.svc.cluster.local:8080
+                    model: nomicai-modernbert-embed-base-8bit
   ignoreDifferences:
     - group: inference.llmkube.dev
       kind: InferenceService
