@@ -184,7 +184,7 @@ spec:
                   - name: DATABASE_URL
                     valueFrom:
                       secretKeyRef: {name: openwebui-postgres, key: uri}
-                  - {name: WEBUI_URL, value: "https://bot-k3s.amer.dev"}
+                  - {name: WEBUI_URL, value: "https://bot.amer.dev"}
                   - {name: DEFAULT_MODELS, value: "qwen3.8-27b"}
                   - {name: ENABLE_OLLAMA_API, value: "false"}
                   - {name: WEBUI_AUTH, value: "true"}
@@ -222,31 +222,31 @@ spec:
         - apiVersion: cert-manager.io/v1
           kind: Certificate
           metadata:
-            name: openwebui-bot-k3s-amer-dev
+            name: openwebui-bot-amer-dev
             namespace: openwebui
           spec:
-            secretName: openwebui-bot-k3s-amer-dev-tls
+            secretName: openwebui-bot-amer-dev-tls
             issuerRef:
               name: letsencrypt-prod
               kind: ClusterIssuer
             dnsNames:
-            - bot-k3s.amer.dev
+            - bot.amer.dev
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
             name: openwebui-ingress
             namespace: openwebui
             annotations:
-              external-dns.alpha.kubernetes.io/hostname: bot-k3s.amer.dev
+              external-dns.alpha.kubernetes.io/hostname: bot.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
           spec:
             ingressClassName: cilium
             tls:
             - hosts:
-              - bot-k3s.amer.dev
-              secretName: openwebui-bot-k3s-amer-dev-tls
+              - bot.amer.dev
+              secretName: openwebui-bot-amer-dev-tls
             rules:
-            - host: bot-k3s.amer.dev
+            - host: bot.amer.dev
               http:
                 paths:
                 - path: /
