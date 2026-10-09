@@ -779,6 +779,33 @@ spec:
                               name: maintainerr-external
                               port:
                                 number: 6246
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: agentgateway-ingress-amer-dev
+                namespace: agentgateway-system
+                annotations:
+                  cert-manager.io/cluster-issuer: letsencrypt-prod
+                  external-dns.alpha.kubernetes.io/hostname: ag.amer.dev
+                  external-dns.alpha.kubernetes.io/ttl: "300"
+                  ingress.cilium.io/loadbalancer-mode: dedicated
+                  lbipam.cilium.io/sharing-key: external-ingress-private
+              spec:
+                tls:
+                  - hosts:
+                      - ag.amer.dev
+                    secretName: ag-amer-dev-tls
+                rules:
+                  - host: ag.amer.dev
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: agentgateway-proxy
+                              port:
+                                number: 80
   destination:
     server: https://kubernetes.default.svc
     namespace: default

@@ -143,6 +143,24 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
+            name: https-probes-agentgateway
+            namespace: monitoring
+          spec:
+            jobName: https-probes-agentgateway
+            interval: 30s
+            scrapeTimeout: 15s
+            module: https_auth_required
+            prober: *id001
+            targets:
+              staticConfig:
+                static:
+                - ag.amer.dev/mcp
+                labels:
+                  stack: llm
+                  service: agentgateway
+        - apiVersion: monitoring.coreos.com/v1
+          kind: Probe
+          metadata:
             name: https-probes-owui
             namespace: monitoring
           spec:
