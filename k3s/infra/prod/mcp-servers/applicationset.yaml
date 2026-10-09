@@ -43,12 +43,17 @@ spec:
                   metadata:
                     name: obsidian-mcp-server
                     namespace: mcp
+                    labels:
+                      mcp.amer.dev/expose: "true"
+                    annotations:
+                      agentgateway.dev/mcp-target-name: obsidian-mcp
                   spec:
                     selector:
                       app: obsidian-mcp-server
                     ports:
                       - port: 8787
                         targetPort: 8787
+                        appProtocol: agentgateway.dev/mcp
                         protocol: TCP
                 - apiVersion: apps/v1
                   kind: Deployment
@@ -164,6 +169,10 @@ spec:
                   metadata:
                     name: bws-mcp-server
                     namespace: mcp
+                    labels:
+                      mcp.amer.dev/expose: "true"
+                    annotations:
+                      agentgateway.dev/mcp-target-name: bws-mcp
                   spec:
                     selector:
                       app: bws-mcp-server
@@ -171,6 +180,7 @@ spec:
                       - name: http
                         port: 8000
                         targetPort: 8000
+                        appProtocol: agentgateway.dev/mcp
                 - apiVersion: apps/v1
                   kind: Deployment
                   metadata:
@@ -275,6 +285,10 @@ spec:
                   metadata:
                     name: infra-mcp-server
                     namespace: mcp
+                    labels:
+                      mcp.amer.dev/expose: "true"
+                    annotations:
+                      agentgateway.dev/mcp-target-name: infra
                   spec:
                     selector:
                       app: infra-mcp-server
@@ -282,6 +296,7 @@ spec:
                       - name: http
                         port: 8000
                         targetPort: 8000
+                        appProtocol: agentgateway.dev/mcp
                 - apiVersion: v1
                   kind: ServiceAccount
                   metadata:
@@ -477,6 +492,10 @@ spec:
                 metadata:
                   name: github-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: github
                 spec:
                   selector:
                     app: github-mcp-server
@@ -484,6 +503,7 @@ spec:
                   - name: http
                     port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
               - apiVersion: apps/v1
                 kind: Deployment
                 metadata:
@@ -590,6 +610,10 @@ spec:
                 metadata:
                   name: praetor-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: praetor
                 spec:
                   selector:
                     app: praetor-mcp-server
@@ -597,6 +621,7 @@ spec:
                   - name: http
                     port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
               - apiVersion: apps/v1
                 kind: Deployment
                 metadata:
@@ -708,12 +733,17 @@ spec:
                 metadata:
                   name: grafana-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: grafana-mcp
                 spec:
                   selector:
                     app: grafana-mcp-server
                   ports:
                   - port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
                     protocol: TCP
               - apiVersion: apps/v1
                 kind: Deployment
@@ -802,12 +832,17 @@ spec:
                 metadata:
                   name: komodo-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: komodo-mcp
                 spec:
                   selector:
                     app: komodo-mcp-server
                   ports:
                   - port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
                     protocol: TCP
               - apiVersion: apps/v1
                 kind: Deployment
@@ -1014,6 +1049,10 @@ spec:
                 metadata:
                   name: kubernetes-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: kubernetes-mcp
                 spec:
                   selector:
                     app: kubernetes-mcp-server
@@ -1021,6 +1060,7 @@ spec:
                   - name: http
                     port: 8000
                     targetPort: 8080
+                    appProtocol: agentgateway.dev/mcp
               - apiVersion: apps/v1
                 kind: Deployment
                 metadata:
@@ -1118,6 +1158,10 @@ spec:
                 metadata:
                   name: mcp-searxng-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: searxng
                 spec:
                   selector:
                     app: mcp-searxng-server
@@ -1125,6 +1169,7 @@ spec:
                   - name: http
                     port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
               - apiVersion: apps/v1
                 kind: Deployment
                 metadata:
@@ -1241,6 +1286,10 @@ spec:
                 metadata:
                   name: secure-search-mcp-server
                   namespace: mcp
+                  labels:
+                    mcp.amer.dev/expose: "true"
+                  annotations:
+                    agentgateway.dev/mcp-target-name: secure-search
                 spec:
                   selector:
                     app: secure-search-mcp-server
@@ -1248,6 +1297,7 @@ spec:
                   - name: http
                     port: 8000
                     targetPort: 8000
+                    appProtocol: agentgateway.dev/mcp
               - apiVersion: apps/v1
                 kind: Deployment
                 metadata:
