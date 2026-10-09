@@ -4,7 +4,7 @@
 Runs in a CPU-only Job (no GPU request) so a download never holds the GPU. Standard library
 only. Modes (env MODE): stage (default), list, delete, evict.
 
-Layout: <WEIGHTS_ROOT>/<hf-repo>/<revision-sha>/<file> plus stage-manifest.json.
+Layout: <WEIGHTS_ROOT>/<hf-repo>/<revision-sha>/<file>, plus <file>.stage.json per staged model.
 
 Exit codes: 0 ok, 2 validation failed (bad selection/header/version/size/fit), 3 network or
 download failure, 4 repo not found or gated without access. The last stdout line is a JSON
@@ -303,54 +303,88 @@ def stage():
                                budget_bytes=budget, hint="lower the context or set FIT_CHECK=warn")
                 facts["fit_warning"] = True
 
-    manifest = {"engine": engine, "repo": repo, "revision": sha, "requested_revision": revision,
-                "primary_file": files[0]["name"], "files": files, "weights_bytes": weights, "ctx_checked": ctx,
-                "dir": outdir, "staged_at": int(time.time()), "last_used": int(time.time()), **facts}
-    with open(os.path.join(outdir, "stage-manifest.json"), "w") as f:
+    mpath = manifest_path(primary)
+    prev = {}
+    if os.path.isfile(mpath):
+        try:
+            prev = json.load(open(mpath))
+        except (OSError, ValueError):
+            prev = {}
+    now = int(time.time())
+    manifest = {"engines": sorted(set(prev.get("engines", [])) | {engine}), "repo": repo, "revision": sha,
+                "requested_revision": revision, "primary_file": files[0]["name"], "files": files,
+                "weights_bytes": weights, "ctx_checked": ctx, "staged_at": prev.get("staged_at", now),
+                "last_used": now, **facts}
+    with open(mpath, "w") as f:
         json.dump(manifest, f, indent=1)
     return {"ok": True, "engine": engine, "repo": repo, "revision": sha, "primary_file": files[0]["name"],
             "path": primary, "weights_bytes": weights, **facts}
 
 
+def manifest_path(primary):
+    return primary + ".stage.json"
+
+
 def entries():
     out = []
-    if not os.path.isdir(ROOT):
-        return out
     for dirpath, _dirs, names in os.walk(ROOT):
-        if "stage-manifest.json" in names:
+        for n in names:
+            if not n.endswith(".stage.json"):
+                continue
             try:
-                m = json.load(open(os.path.join(dirpath, "stage-manifest.json")))
+                m = json.load(open(os.path.join(dirpath, n)))
             except (OSError, ValueError):
                 continue
-            m["dir"] = dirpath
+            primary = os.path.join(ROOT, m["repo"], m["revision"], m["primary_file"])
+            m["path"] = primary
+            m["ollama_imported"] = os.path.isfile(primary + ".ollama-imported")
             out.append(m)
     return out
 
 
-def touch(path):
-    m = json.load(open(path))
-    m["last_used"] = int(time.time())
-    json.dump(m, open(path, "w"), indent=1)
+def entry_key(m):
+    return "%s@%s#%s" % (m["repo"], m["revision"], m["primary_file"])
+
+
+def remove_entry(m):
+    base = os.path.join(ROOT, m["repo"], m["revision"])
+    for f in m["files"]:
+        for suffix in ("", ".ok", ".part"):
+            p = os.path.join(base, f["name"] + suffix)
+            if os.path.isfile(p):
+                os.remove(p)
+    for suffix in (".stage.json", ".ollama-imported"):
+        p = m["path"] + suffix
+        if os.path.isfile(p):
+            os.remove(p)
+    cur = os.path.dirname(m["path"])
+    root = os.path.realpath(ROOT)
+    while os.path.realpath(cur).startswith(root + os.sep):
+        try:
+            os.rmdir(cur)
+        except OSError:
+            break
+        cur = os.path.dirname(cur)
 
 
 def run_list():
-    es = [{k: e.get(k) for k in ("repo", "revision", "engine", "primary_file", "weights_bytes", "last_used", "staged_at")}
-          for e in entries()]
+    es = [{k: e.get(k) for k in ("repo", "revision", "requested_revision", "primary_file", "path", "engines",
+                                  "ollama_imported", "weights_bytes", "last_used", "staged_at")} for e in entries()]
     used = shutil.disk_usage(ROOT)
     return {"ok": True, "entries": es, "volume_total": used.total, "volume_free": used.free}
 
 
 def run_delete():
-    repo, rev = os.environ["HF_REPO"], os.environ["HF_REVISION"]
-    target = os.path.realpath(os.path.join(ROOT, repo, rev))
-    if not target.startswith(os.path.realpath(ROOT) + os.sep) or not os.path.isfile(os.path.join(target, "stage-manifest.json")):
-        raise Fail(2, "not_a_staged_entry", repo=repo, revision=rev)
-    shutil.rmtree(target)
-    return {"ok": True, "deleted": [repo, rev]}
+    repo, rev, primary = os.environ["HF_REPO"], os.environ["HF_REVISION"], os.environ["PRIMARY_FILE"]
+    for m in entries():
+        if (m["repo"], m["revision"], m["primary_file"]) == (repo, rev, primary):
+            remove_entry(m)
+            return {"ok": True, "deleted": entry_key(m)}
+    raise Fail(2, "not_a_staged_entry", repo=repo, revision=rev, primary_file=primary)
 
 
 def run_evict():
-    """Delete least recently used entries until total size is below LIMIT_GIB, skipping IN_USE (repo@rev list)."""
+    """Delete least recently used entries until staged weights are below LIMIT_GIB, skipping IN_USE keys."""
     limit = env_int("LIMIT_GIB", 300) * GIB
     in_use = set(filter(None, os.environ.get("IN_USE", "").split(",")))
     es = sorted(entries(), key=lambda e: e.get("last_used", 0))
@@ -359,11 +393,11 @@ def run_evict():
     for e in es:
         if total <= limit:
             break
-        if "%s@%s" % (e["repo"], e["revision"]) in in_use:
+        if entry_key(e) in in_use:
             continue
-        shutil.rmtree(e["dir"])
+        remove_entry(e)
         total -= e.get("weights_bytes", 0)
-        deleted.append([e["repo"], e["revision"]])
+        deleted.append(entry_key(e))
     return {"ok": True, "deleted": deleted, "remaining_bytes": total}
 
 

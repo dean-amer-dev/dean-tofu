@@ -85,6 +85,7 @@ def build_stage(runner_name, r, engine, repo, revision, file_glob, ctx, run_id, 
             "until ollama list >/dev/null 2>&1; do sleep 1; done\n"
             "printf 'FROM %s\\n' \"$P\" > /tmp/Modelfile\n"
             "ollama create \"$N\" -f /tmp/Modelfile\n"
+            "touch \"$P.ollama-imported\"\n"
             "ollama list\n"
         )
         pod["initContainers"] = [fetch]
