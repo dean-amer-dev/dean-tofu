@@ -33,6 +33,22 @@ spec:
         webhook:
           certManager:
             enabled: true
+        metrics:
+          secure: false
+        prometheus:
+          serviceMonitor:
+            enabled: true
+          inferencePodMonitor:
+            enabled: false
+          routerPodMonitor:
+            enabled: true
+          prometheusRule:
+            enabled: true
+            rules:
+              gpu:
+                enabled: false
+              inference:
+                enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: llmkube-system
