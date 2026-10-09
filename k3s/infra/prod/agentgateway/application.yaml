@@ -89,6 +89,97 @@ spec:
                         kind: AgentgatewayBackend
                         name: mcp-pilot
                         weight: 1
+            - apiVersion: agentgateway.dev/v1alpha1
+              kind: AgentgatewayBackend
+              metadata:
+                name: mcp-all
+                namespace: agentgateway-system
+              spec:
+                mcp:
+                  sessionRouting: Stateless
+                  prefixMode: Always
+                  failureMode: FailOpen
+                  targets:
+                    - name: obsidian-mcp
+                      static:
+                        host: obsidian-mcp-server.mcp.svc.cluster.local
+                        port: 8787
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: bws-mcp
+                      static:
+                        host: bws-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: infra
+                      static:
+                        host: infra-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: github
+                      static:
+                        host: github-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: praetor
+                      static:
+                        host: praetor-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: grafana-mcp
+                      static:
+                        host: grafana-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: komodo-mcp
+                      static:
+                        host: komodo-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: kubernetes-mcp
+                      static:
+                        host: kubernetes-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: searxng
+                      static:
+                        host: mcp-searxng-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+                    - name: secure-search
+                      static:
+                        host: secure-search-mcp-server.mcp.svc.cluster.local
+                        port: 8000
+                        path: /mcp
+                        protocol: StreamableHTTP
+            - apiVersion: gateway.networking.k8s.io/v1
+              kind: HTTPRoute
+              metadata:
+                name: mcp-all
+                namespace: agentgateway-system
+              spec:
+                parentRefs:
+                  - group: gateway.networking.k8s.io
+                    kind: Gateway
+                    name: agentgateway-proxy
+                rules:
+                  - matches:
+                      - path:
+                          type: PathPrefix
+                          value: /mcp
+                    backendRefs:
+                      - group: agentgateway.dev
+                        kind: AgentgatewayBackend
+                        name: mcp-all
+                        weight: 1
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system
