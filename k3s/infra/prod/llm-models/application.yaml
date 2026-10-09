@@ -159,6 +159,46 @@ spec:
               modelRef: modernbert-embed-mlx
               runtime: omlx
               replicas: 1
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: ModelRouter
+            metadata:
+              name: llm
+              namespace: llm
+            spec:
+              dataPlane: Proxy
+              defaultRouteStrategy: BackendNameMatch
+              defaultRoute: qwen38-27b
+              proxy:
+                replicas: 2
+              endpoint:
+                type: ClusterIP
+                port: 8080
+                path: /v1/chat/completions
+              backends:
+                - name: qwen38-27b
+                  displayName: qwen3.8-27b
+                  resolution: service
+                  tier: local
+                  external:
+                    provider: openai
+                    url: http://qwen38-27b.llm.svc.cluster.local:8080
+                    model: qwen3.8-27b
+                - name: qwen35-9b-mini
+                  displayName: Qwen3.5-9B-MLX-4bit
+                  resolution: service
+                  tier: local
+                  external:
+                    provider: openai
+                    url: http://qwen35-9b-mini.llm.svc.cluster.local:8080
+                    model: Qwen3.5-9B-MLX-4bit
+                - name: modernbert-embed-mini
+                  displayName: nomicai-modernbert-embed-base-8bit
+                  resolution: service
+                  tier: local
+                  external:
+                    provider: openai
+                    url: http://modernbert-embed-mini.llm.svc.cluster.local:8080
+                    model: nomicai-modernbert-embed-base-8bit
   destination:
     server: https://kubernetes.default.svc
     namespace: llm
