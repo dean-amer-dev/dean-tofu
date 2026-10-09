@@ -159,6 +159,32 @@ spec:
               modelRef: modernbert-embed-mlx
               runtime: omlx
               replicas: 1
+          - apiVersion: inference.llmkube.dev/v1alpha1
+            kind: ModelRouter
+            metadata:
+              name: llm
+              namespace: llm
+            spec:
+              defaultRouteStrategy: BackendNameMatch
+              defaultRoute: qwen38-27b
+              proxy:
+                replicas: 2
+              endpoint:
+                type: ClusterIP
+                port: 8080
+              backends:
+                - name: qwen38-27b
+                  displayName: qwen3.8-27b
+                  inferenceServiceRef:
+                    name: qwen38-27b
+                - name: qwen35-9b-mini
+                  displayName: Qwen3.5-9B-MLX-4bit
+                  inferenceServiceRef:
+                    name: qwen35-9b-mini
+                - name: modernbert-embed-mini
+                  displayName: nomicai-modernbert-embed-base-8bit
+                  inferenceServiceRef:
+                    name: modernbert-embed-mini
   destination:
     server: https://kubernetes.default.svc
     namespace: llm
