@@ -154,7 +154,7 @@ spec:
             targets:
               staticConfig:
                 static:
-                - zoidberg.amer.dev
+                - bot.amer.dev
                 labels:
                   stack: llm
                   service: openwebui
@@ -179,28 +179,28 @@ spec:
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
-            name: https-probes-couchdb
+            name: tcp-probes-couchdb
             namespace: monitoring
           spec:
-            jobName: https-probes-couchdb
+            jobName: tcp-probes-couchdb
             interval: 30s
             scrapeTimeout: 15s
-            module: https_2xx
+            module: tcp_connect
             prober: *id001
             targets:
               staticConfig:
                 static:
-                - couchdb.amer.dev
+                - couchdb-svc-couchdb.couchdb.svc:5984
                 labels:
                   stack: db
                   service: couchdb
         - apiVersion: monitoring.coreos.com/v1
           kind: Probe
           metadata:
-            name: tcp-probes-qdrant
+            name: tcp-probe-llmkube-metal-agent-mini
             namespace: monitoring
           spec:
-            jobName: tcp-probes-qdrant
+            jobName: tcp-probe-llmkube-metal-agent-mini
             interval: 30s
             scrapeTimeout: 15s
             module: tcp_connect
@@ -208,43 +208,7 @@ spec:
             targets:
               staticConfig:
                 static:
-                - 10.100.20.18:6333
-                labels:
-                  stack: db
-                  service: qdrant
-        - apiVersion: monitoring.coreos.com/v1
-          kind: Probe
-          metadata:
-            name: tcp-probes-libsync-redis
-            namespace: monitoring
-          spec:
-            jobName: tcp-probes-libsync-redis
-            interval: 30s
-            scrapeTimeout: 15s
-            module: tcp_connect
-            prober: *id001
-            targets:
-              staticConfig:
-                static:
-                - 10.100.20.18:6379
-                labels:
-                  stack: db
-                  service: libsync-redis
-        - apiVersion: monitoring.coreos.com/v1
-          kind: Probe
-          metadata:
-            name: http-probe-llmkube-metal-agent-mini
-            namespace: monitoring
-          spec:
-            jobName: http-probe-llmkube-metal-agent-mini
-            interval: 30s
-            scrapeTimeout: 15s
-            module: http_2xx
-            prober: *id001
-            targets:
-              staticConfig:
-                static:
-                - 10.100.20.18:9090/healthz
+                - 10.100.20.18:9443
                 labels:
                   stack: llm
                   service: llmkube-metal-agent-mini
