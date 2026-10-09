@@ -1,0 +1,159 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: model-switch-mcp
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bedag.github.io/helm-charts/
+    chart: raw
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        resources:
+          - apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: model-switch-mcp-token
+              namespace: mcp
+            spec:
+              refreshInterval: 1h
+              secretStoreRef:
+                name: bitwarden-secretsmanager
+                kind: ClusterSecretStore
+              target:
+                name: model-switch-mcp-token
+                creationPolicy: Owner
+                deletionPolicy: Retain
+              data:
+                - secretKey: token
+                  remoteRef:
+                    key: model-switch-mcp-bearer-token
+                    conversionStrategy: Default
+                    decodingStrategy: None
+                    metadataPolicy: None
+          - apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: model-switch-mcp
+              namespace: mcp
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: model-switch-mcp-server
+              namespace: mcp
+            spec:
+              selector:
+                app: model-switch-mcp-server
+              ports:
+                - name: http
+                  port: 8000
+                  targetPort: 8000
+          - apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: model-switch-mcp-server
+              namespace: mcp
+              annotations:
+                reloader.stakater.com/auto: "true"
+            spec:
+              replicas: 2
+              selector:
+                matchLabels:
+                  app: model-switch-mcp-server
+              strategy:
+                type: RollingUpdate
+                rollingUpdate:
+                  maxUnavailable: 0
+                  maxSurge: 1
+              template:
+                metadata:
+                  labels:
+                    app: model-switch-mcp-server
+                spec:
+                  serviceAccountName: model-switch-mcp
+                  topologySpreadConstraints:
+                    - maxSkew: 1
+                      topologyKey: kubernetes.io/hostname
+                      whenUnsatisfiable: ScheduleAnyway
+                      labelSelector:
+                        matchLabels:
+                          app: model-switch-mcp-server
+                  containers:
+                    - name: server
+                      image: ghcr.io/dean-amer-dev/model-switch-mcp@sha256:5834437b7d4b756719194813b12c71c5cf3da192ed99c234375f40bfd9187cf3
+                      ports:
+                        - containerPort: 8000
+                      env:
+                        - name: MCP_BEARER_TOKEN
+                          valueFrom:
+                            secretKeyRef:
+                              name: model-switch-mcp-token
+                              key: token
+                        - name: RUNNERS_NAMESPACE
+                          value: llm-bench
+                      readinessProbe:
+                        httpGet:
+                          path: /health
+                          port: 8000
+                        initialDelaySeconds: 5
+                        periodSeconds: 10
+                      livenessProbe:
+                        httpGet:
+                          path: /health
+                          port: 8000
+                        initialDelaySeconds: 15
+                        periodSeconds: 30
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 128Mi
+                        limits:
+                          cpu: 500m
+                          memory: 256Mi
+          - apiVersion: policy/v1
+            kind: PodDisruptionBudget
+            metadata:
+              name: model-switch-mcp-server
+              namespace: mcp
+            spec:
+              minAvailable: 1
+              selector:
+                matchLabels:
+                  app: model-switch-mcp-server
+          - apiVersion: networking.k8s.io/v1
+            kind: Ingress
+            metadata:
+              name: model-switch-mcp-ingress
+              namespace: mcp
+              annotations:
+                cert-manager.io/cluster-issuer: letsencrypt-prod
+                external-dns.alpha.kubernetes.io/hostname: model-switch-mcp.amer.dev
+                external-dns.alpha.kubernetes.io/ttl: "300"
+            spec:
+              tls:
+                - hosts:
+                    - model-switch-mcp.amer.dev
+                  secretName: model-switch-mcp-amer-dev-tls
+              rules:
+                - host: model-switch-mcp.amer.dev
+                  http:
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: model-switch-mcp-server
+                            port:
+                              number: 8000
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mcp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
