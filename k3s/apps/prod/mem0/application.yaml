@@ -39,12 +39,6 @@ spec:
                 conversionStrategy: Default
                 decodingStrategy: None
                 metadataPolicy: None
-            - secretKey: OPENAI_API_KEY
-              remoteRef:
-                key: litellm-master-key
-                conversionStrategy: Default
-                decodingStrategy: None
-                metadataPolicy: None
         - apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -57,6 +51,7 @@ spec:
             POSTGRES_USER: mem0
             APP_DB_NAME: mem0
             OPENAI_BASE_URL: http://llm-router-proxy.llm.svc.cluster.local:8080/v1
+            OPENAI_API_KEY: none
             MEM0_DEFAULT_LLM_MODEL: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-MLX-mxfp4
             MEM0_DEFAULT_EMBEDDER_MODEL: nomicai-modernbert-embed-base-8bit
             EMBEDDING_MODEL_DIMS: "768"
@@ -219,8 +214,6 @@ spec:
             - fromEndpoints:
               - matchLabels:
                   k8s:io.kubernetes.pod.namespace: mcp
-              - matchLabels:
-                  k8s:io.kubernetes.pod.namespace: litellm
               toPorts:
               - ports:
                 - {port: "8000", protocol: TCP}
