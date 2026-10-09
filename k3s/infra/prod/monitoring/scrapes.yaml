@@ -154,7 +154,7 @@ spec:
             targets:
               staticConfig:
                 static:
-                - ag.amer.dev/mcp
+                - mcp.amer.dev/mcp
                 labels:
                   stack: llm
                   service: agentgateway
