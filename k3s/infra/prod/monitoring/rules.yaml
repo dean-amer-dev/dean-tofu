@@ -200,19 +200,26 @@ spec:
                   summary: ExternalSecret {{ $labels.exported_namespace }}/{{ $labels.name }} is not syncing
                 for: 20m
               - alert: LonghornVolumeDegraded
-                expr: longhorn_volume_robustness == 2
+                expr: longhorn_volume_robustness{state="degraded"} == 1
                 labels:
                   severity: warning
                 annotations:
-                  summary: Longhorn volume {{ $labels.volume }} is degraded
+                  summary: Longhorn volume {{ $labels.pvc_namespace }}/{{ $labels.pvc }} is degraded
                 for: 30m
               - alert: LonghornVolumeFaulted
-                expr: longhorn_volume_robustness == 3
+                expr: longhorn_volume_robustness{state="faulted"} == 1
                 labels:
                   severity: critical
                 annotations:
-                  summary: Longhorn volume {{ $labels.volume }} is faulted
+                  summary: Longhorn volume {{ $labels.pvc_namespace }}/{{ $labels.pvc }} is faulted
                 for: 2m
+              - alert: LonghornNodeNotReady
+                expr: longhorn_node_status{condition="ready"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Longhorn node {{ $labels.node }} is not ready
+                for: 10m
               - alert: LonghornDiskUsageHigh
                 expr: 100 * longhorn_disk_usage_bytes / longhorn_disk_capacity_bytes > 85
                 labels:
@@ -227,6 +234,29 @@ spec:
                 annotations:
                   summary: CoreDNS {{ $labels.instance }} is down
                 for: 5m
+            - name: llmkube
+              rules:
+              - alert: LLMKubeControllerDown
+                expr: up{job="llmkube-controller"} == 0
+                labels:
+                  severity: critical
+                annotations:
+                  summary: LLMKube controller {{ $labels.instance }} is down
+                for: 5m
+              - alert: InferenceServiceNotReady
+                expr: llmkube_inferenceservice_replicas{state="desired"} - ignoring(state) llmkube_inferenceservice_replicas{state="ready"} > 0
+                labels:
+                  severity: warning
+                annotations:
+                  summary: InferenceService {{ $labels.namespace }}/{{ $labels.inferenceservice }} has not reached its desired ready replicas
+                for: 30m
+              - alert: LLMKubeModelNotReady
+                expr: llmkube_model_status{phase!="Ready"} == 1
+                labels:
+                  severity: warning
+                annotations:
+                  summary: Model {{ $labels.namespace }}/{{ $labels.model }} is {{ $labels.phase }}
+                for: 30m
             - name: monitoring
               rules:
               - alert: TargetDown
