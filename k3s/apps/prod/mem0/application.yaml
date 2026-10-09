@@ -57,7 +57,7 @@ spec:
             POSTGRES_USER: mem0
             APP_DB_NAME: mem0
             OPENAI_BASE_URL: http://litellm-server.litellm.svc:4000/v1
-            MEM0_DEFAULT_LLM_MODEL: coder
+            MEM0_DEFAULT_LLM_MODEL: mini-qwen35-9b
             MEM0_DEFAULT_EMBEDDER_MODEL: nomic-embed-text
             EMBEDDING_MODEL_DIMS: "768"
             HISTORY_DB_PATH: ":memory:"
@@ -177,11 +177,14 @@ spec:
                       port: 8000
                     periodSeconds: 10
                   livenessProbe:
-                    httpGet:
-                      path: /openapi.json
-                      port: 8000
+                    exec:
+                      command:
+                      - python
+                      - -c
+                      - "import os,urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:8000/memories?top_k=1', headers={'X-API-Key': os.environ['ADMIN_API_KEY']}), timeout=8)"
                     periodSeconds: 30
-                    timeoutSeconds: 5
+                    timeoutSeconds: 10
+                    failureThreshold: 3
                   resources:
                     requests:
                       cpu: 100m
