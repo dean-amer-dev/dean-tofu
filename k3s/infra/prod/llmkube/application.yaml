@@ -43,12 +43,16 @@ spec:
           routerPodMonitor:
             enabled: true
           prometheusRule:
-            enabled: true
-            rules:
-              gpu:
-                enabled: false
-              inference:
-                enabled: false
+            enabled: false
+  ignoreDifferences:
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+      jqPathExpressions:
+        - .spec.endpoints[].relabelings[].action
+    - group: monitoring.coreos.com
+      kind: PodMonitor
+      jqPathExpressions:
+        - .spec.podMetricsEndpoints[].relabelings[].action
   destination:
     server: https://kubernetes.default.svc
     namespace: llmkube-system
