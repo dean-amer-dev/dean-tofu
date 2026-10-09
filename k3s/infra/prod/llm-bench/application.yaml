@@ -12,6 +12,53 @@ spec:
     helm:
       values: |
         resources:
+          - apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: llm-bench-weights
+              namespace: llm-bench
+              annotations:
+                argocd.argoproj.io/sync-options: Prune=false,Delete=false
+            spec:
+              accessModes:
+                - ReadWriteOnce
+              storageClassName: murderbot-local
+              resources:
+                requests:
+                  storage: 500Gi
+          - apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: llm-bench-switch
+              namespace: llm-bench
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: llm-bench-switch
+              namespace: llm-bench
+            rules:
+              - apiGroups: ["batch"]
+                resources: ["jobs"]
+                verbs: ["get", "list", "watch", "create", "delete"]
+              - apiGroups: [""]
+                resources: ["services"]
+                verbs: ["get", "list", "watch", "create", "delete"]
+              - apiGroups: [""]
+                resources: ["pods", "pods/log", "events"]
+                verbs: ["get", "list", "watch"]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: llm-bench-switch
+              namespace: llm-bench
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: Role
+              name: llm-bench-switch
+            subjects:
+              - kind: ServiceAccount
+                name: llm-bench-switch
+                namespace: llm-bench
           - apiVersion: batch/v1
             kind: Job
             metadata:
