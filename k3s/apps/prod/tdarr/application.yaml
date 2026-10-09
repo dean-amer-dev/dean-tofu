@@ -53,6 +53,7 @@ spec:
             annotations:
               external-dns.alpha.kubernetes.io/hostname: tdarr.media.amer.dev
               external-dns.alpha.kubernetes.io/ttl: "300"
+              ingress.cilium.io/loadbalancer-mode: dedicated
           spec:
             tls:
             - hosts:
