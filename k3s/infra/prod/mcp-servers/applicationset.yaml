@@ -1192,7 +1192,7 @@ spec:
                     spec:
                       containers:
                       - name: server
-                        image: ghcr.io/dean-amer-dev/mcp-searxng:sha-8d21293c474519ab196e03a422b4de44462e05da@sha256:54c5f75e627bdd812d5e3f4823af3b2101bde86db55bc01b18de5c67bc641495
+                        image: ghcr.io/dean-amer-dev/mcp-searxng:sha-86837694956e070072bb84418ae4b3d04f6ec920@sha256:0ad3a4fa0cc50f34b990dbf5ed5939b0a2dc866080fce9fbd7bec2b15870621d
                         imagePullPolicy: Always
                         ports:
                         - containerPort: 8000
