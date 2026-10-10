@@ -1192,7 +1192,7 @@ spec:
                     spec:
                       containers:
                       - name: server
-                        image: ghcr.io/dean-amer-dev/mcp-searxng:sha-df8ad591fb3d77d46fe17627aeeb04b052cfb57d@sha256:6a16b58c14a56cecb8beab637ebfc8d2d8b7e8cf91ff2a5883627bd4cb3085aa
+                        image: ghcr.io/dean-amer-dev/mcp-searxng:sha-8d21293c474519ab196e03a422b4de44462e05da@sha256:54c5f75e627bdd812d5e3f4823af3b2101bde86db55bc01b18de5c67bc641495
                         imagePullPolicy: Always
                         ports:
                         - containerPort: 8000
@@ -1205,6 +1205,10 @@ spec:
                           value: '600'
                         - name: MAX_URL_CONTENT_CHARS
                           value: '4000'
+                        - name: EMBED_URL
+                          value: http://modernbert-embed-mini.llm.svc.cluster.local:8080/v1/embeddings
+                        - name: EMBED_MODEL
+                          value: nomicai-modernbert-embed-base-8bit
                         readinessProbe:
                           httpGet:
                             path: /health
