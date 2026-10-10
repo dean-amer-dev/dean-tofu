@@ -1,0 +1,118 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agents
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bedag.github.io/helm-charts/
+      chart: raw
+      targetRevision: 2.0.2
+      helm:
+        values: |
+          resources:
+          - apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: agent-runner
+              namespace: agents
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: agent-runner
+              namespace: agents
+            rules:
+            - apiGroups: [argoproj.io]
+              resources: [workflowtaskresults]
+              verbs: [create, patch]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: agent-runner
+              namespace: agents
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: Role
+              name: agent-runner
+            subjects:
+            - kind: ServiceAccount
+              name: agent-runner
+              namespace: agents
+          - apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: phoenix-agents-api-key
+              namespace: agents
+            spec:
+              refreshInterval: 1h
+              secretStoreRef:
+                name: bitwarden-secretsmanager
+                kind: ClusterSecretStore
+              target:
+                name: phoenix-agents-api-key
+                creationPolicy: Owner
+                deletionPolicy: Retain
+              data:
+              - secretKey: api_key
+                remoteRef:
+                  key: phoenix-agents-project-api-key
+                  conversionStrategy: Default
+                  decodingStrategy: None
+                  metadataPolicy: None
+          - apiVersion: argoproj.io/v1alpha1
+            kind: WorkflowTemplate
+            metadata:
+              name: research-0
+              namespace: agents
+            spec:
+              entrypoint: research
+              serviceAccountName: agent-runner
+              arguments:
+                parameters:
+                - name: QUERY
+              ttlStrategy:
+                secondsAfterCompletion: 86400
+              podGC:
+                strategy: OnWorkflowSuccess
+              templates:
+              - name: research
+                activeDeadlineSeconds: 1800
+                inputs:
+                  parameters:
+                  - name: QUERY
+                container:
+                  image: ghcr.io/dean-amer-dev/research-0:sha-699ec544a4a03601d52fff0cfa96d9ec4bf4f88c@sha256:0c140d33ab20622c9818b113190d1b989fa713e991dee36b838bf6819503a1c1
+                  resources:
+                    requests: {cpu: 250m, memory: 512Mi}
+                    limits: {memory: 2Gi}
+                  env:
+                  - {name: QUERY, value: "{{inputs.parameters.QUERY}}"}
+                  - {name: RETRIEVER, value: searx}
+                  - {name: SEARX_URL, value: "http://searxng.searxng.svc.cluster.local:8080"}
+                  - {name: OPENAI_BASE_URL, value: "http://llm-router-proxy.llm.svc.cluster.local:8080/v1"}
+                  - {name: OPENAI_API_KEY, value: none}
+                  - {name: FAST_LLM, value: "openai:qwen3.8-27b-uncensored"}
+                  - {name: SMART_LLM, value: "openai:qwen3.8-27b-uncensored"}
+                  - {name: STRATEGIC_LLM, value: "openai:qwen3.8-27b-uncensored"}
+                  - name: LLM_KWARGS
+                    value: '{"extra_body": {"chat_template_kwargs": {"enable_thinking": false}}}'
+                  - {name: EMBEDDING, value: "openai:nomicai-modernbert-embed-base-8bit"}
+                  - {name: OBSIDIAN_MCP_URL, value: "http://obsidian-mcp-server.mcp.svc.cluster.local:8787/mcp"}
+                  - {name: PHOENIX_COLLECTOR_ENDPOINT, value: "http://phoenix-svc.phoenix.svc.cluster.local:6006"}
+                  - {name: PHOENIX_PROJECT_NAME, value: agents}
+                  - name: PHOENIX_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: phoenix-agents-api-key
+                        key: api_key
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agents
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
