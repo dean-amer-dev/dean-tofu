@@ -143,7 +143,7 @@ spec:
                   parameters:
                   - name: QUERY
                 container:
-                  image: ghcr.io/dean-amer-dev/research-0:sha-286d1cb41ff4b8f789bd0802e28bcb2df3c8b93c@sha256:68a391c39f3a51ffcd3d64290c27202c44163febe72f9280841b27a2d844d972
+                  image: ghcr.io/dean-amer-dev/research-0:sha-0f3d47179617ee513b8308dcd91e79154b77c7fa@sha256:56fa116a3dd983fb2129aff9185d46e6cc90211ebc9e8df88693e6e93bffbd1b
                   resources:
                     requests: {cpu: 250m, memory: 512Mi}
                     limits: {memory: 2Gi}
