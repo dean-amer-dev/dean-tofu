@@ -39,6 +39,47 @@ spec:
             - kind: ServiceAccount
               name: agent-runner
               namespace: agents
+          - apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: workflow-submitter
+              namespace: agents
+          - apiVersion: v1
+            kind: Secret
+            type: kubernetes.io/service-account-token
+            metadata:
+              name: workflow-submitter-token
+              namespace: agents
+              annotations:
+                kubernetes.io/service-account.name: workflow-submitter
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: workflow-submitter
+              namespace: agents
+            rules:
+            - apiGroups: [argoproj.io]
+              resources: [workflows]
+              verbs: [create, get, list, watch]
+            - apiGroups: [argoproj.io]
+              resources: [workflowtemplates]
+              verbs: [get, list]
+            - apiGroups: [""]
+              resources: [pods, pods/log]
+              verbs: [get, list]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: workflow-submitter
+              namespace: agents
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: Role
+              name: workflow-submitter
+            subjects:
+            - kind: ServiceAccount
+              name: workflow-submitter
+              namespace: agents
           - apiVersion: external-secrets.io/v1
             kind: ExternalSecret
             metadata:
