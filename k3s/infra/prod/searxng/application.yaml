@@ -55,6 +55,14 @@ spec:
                       - pypi
                       - mdn
 
+                engines:
+                  - name: bing
+                    disabled: false
+                  - name: yandex
+                    disabled: false
+                  - name: hackernews
+                    disabled: false
+
                 general:
                   instance_name: "Dean Search"
                   enable_metrics: false
