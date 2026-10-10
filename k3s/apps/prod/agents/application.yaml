@@ -143,7 +143,7 @@ spec:
                   parameters:
                   - name: QUERY
                 container:
-                  image: ghcr.io/dean-amer-dev/research-0:sha-699ec544a4a03601d52fff0cfa96d9ec4bf4f88c@sha256:0c140d33ab20622c9818b113190d1b989fa713e991dee36b838bf6819503a1c1
+                  image: ghcr.io/dean-amer-dev/research-0:sha-286d1cb41ff4b8f789bd0802e28bcb2df3c8b93c@sha256:68a391c39f3a51ffcd3d64290c27202c44163febe72f9280841b27a2d844d972
                   resources:
                     requests: {cpu: 250m, memory: 512Mi}
                     limits: {memory: 2Gi}
@@ -162,6 +162,8 @@ spec:
                   - {name: OBSIDIAN_MCP_URL, value: "http://obsidian-mcp-server.mcp.svc.cluster.local:8787/mcp"}
                   - {name: PHOENIX_COLLECTOR_ENDPOINT, value: "http://phoenix-svc.phoenix.svc.cluster.local:6006"}
                   - {name: PHOENIX_PROJECT_NAME, value: agents}
+                  - {name: PHOENIX_PROMPT_NAME, value: research-0}
+                  - {name: PHOENIX_PROMPT_TAG, value: production}
                   - name: PHOENIX_API_KEY
                     valueFrom:
                       secretKeyRef:
