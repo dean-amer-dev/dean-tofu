@@ -80,6 +80,26 @@ spec:
             - kind: ServiceAccount
               name: workflow-submitter
               namespace: agents
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              name: workflow-submitter-ui-read
+            rules:
+            - apiGroups: [argoproj.io]
+              resources: [workflows, workflowtemplates, cronworkflows]
+              verbs: [get, list, watch]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: workflow-submitter-ui-read
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: workflow-submitter-ui-read
+            subjects:
+            - kind: ServiceAccount
+              name: workflow-submitter
+              namespace: agents
           - apiVersion: external-secrets.io/v1
             kind: ExternalSecret
             metadata:
