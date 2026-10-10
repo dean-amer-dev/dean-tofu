@@ -39,8 +39,44 @@ spec:
               name: searxng-config
               namespace: searxng
             data:
-              settings.yml: "use_default_settings: true\n\ngeneral:\n  instance_name: \"Dean Search\"\n  enable_metrics: false\n\nsearch:\n  safe_search: 1\n  default_lang: \"en\"\n  formats:\n    - html\n    - json\n\n  # These are the defaults \u2014 override per-query via MCP engines param when needed.\n  # Keep google+bing for general, stackoverflow+github for code, reddit for community discussions.\n\nserver:\n  port: 8080\n  bind_address: \"0.0.0.0\"\n  limiter: false\n\nui:\n  static_use_hash: true\n\nengines:\n  - name: google\n    engine: google\n    shortcut: g\n    disabled: false\n  - name: bing\n    engine: bing\n    shortcut: b\n    disabled: false\n  - name: duckduckgo\n    engine: duckduckgo\n    shortcut: ddg\n    disabled: false\n  - name: wikipedia\n    engine: wikipedia\n    shortcut: wp\n    disabled: true\n  - name: github\n    engine: github\n    shortcut: gh\n    disabled: false\n  - name: arxiv\n    engine: arxiv\n    shortcut: ax\n    disabled: true\n  - name: stackoverflow\n\
-                \    engine: stackoverflow\n    shortcut: so\n    disabled: false\n  - name: reddit\n    engine: reddit\n    shortcut: r\n    disabled: true\n"
+              settings.yml: |
+                use_default_settings:
+                  engines:
+                    keep_only:
+                      - bing
+                      - yandex
+                      - wikipedia
+                      - github
+                      - stackoverflow
+                      - hackernews
+                      - arxiv
+                      - google scholar
+                      - semantic scholar
+                      - pypi
+                      - mdn
+
+                general:
+                  instance_name: "Dean Search"
+                  enable_metrics: false
+
+                search:
+                  safe_search: 1
+                  default_lang: "en"
+                  formats:
+                    - html
+                    - json
+
+                outgoing:
+                  request_timeout: 4.0
+                  max_request_timeout: 8.0
+
+                server:
+                  port: 8080
+                  bind_address: "0.0.0.0"
+                  limiter: false
+
+                ui:
+                  static_use_hash: true
           - apiVersion: v1
             kind: Service
             metadata:
