@@ -95,6 +95,8 @@ spec:
                   - {name: FAST_LLM, value: "openai:qwen3.8-27b-uncensored"}
                   - {name: SMART_LLM, value: "openai:qwen3.8-27b-uncensored"}
                   - {name: STRATEGIC_LLM, value: "openai:qwen3.8-27b-uncensored"}
+                  - name: LLM_KWARGS
+                    value: '{"extra_body": {"chat_template_kwargs": {"enable_thinking": false}}}'
                   - {name: EMBEDDING, value: "openai:nomicai-modernbert-embed-base-8bit"}
                   - {name: OBSIDIAN_MCP_URL, value: "http://obsidian-mcp-server.mcp.svc.cluster.local:8787/mcp"}
                   - {name: PHOENIX_COLLECTOR_ENDPOINT, value: "http://phoenix-svc.phoenix.svc.cluster.local:6006"}
